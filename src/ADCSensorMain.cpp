@@ -41,7 +41,11 @@ static constexpr float gpioBridgeSetupTimeDefault = 0.02;
 
 namespace fs = std::filesystem;
 
-static constexpr auto sensorTypes{std::to_array<const char*>({"ADC"})};
+static constexpr auto supportedDrivers{
+    std::to_array<const char*>({"iio_hwmon", "ads7828"})};
+
+static constexpr auto sensorTypes{
+    std::to_array<const char*>({"ADC", "I2CADC"})};
 static std::regex inputRegex(R"(in(\d+)_input)");
 
 static boost::container::flat_map<size_t, bool> cpuPresence;
@@ -52,67 +56,119 @@ enum class UpdateType
     cpuPresenceChange
 };
 
-// filter out adc from any other voltage sensor
-bool isAdc(const fs::path& parentPath)
-{
-    fs::path namePath = parentPath / "name";
-
-    std::ifstream nameFile(namePath);
-    if (!nameFile.good())
-    {
-        std::cerr << "Failure reading " << namePath.string() << "\n";
-        return false;
-    }
-
-    std::string name;
-    std::getline(nameFile, name);
-
-    return name == "iio_hwmon";
-}
-
-void createSensors(
+static void createSensorsCallback(
     boost::asio::io_context& io, sdbusplus::asio::object_server& objectServer,
+    std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
+    const ManagedObjectType& sensorConfigurations,
     boost::container::flat_map<std::string, std::shared_ptr<ADCSensor>>&
         sensors,
-    std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
     const std::shared_ptr<boost::container::flat_set<std::string>>&
         sensorsChanged,
     UpdateType updateType)
 {
-    auto getter = std::make_shared<GetSensorConfiguration>(
-        dbusConnection,
-        [&io, &objectServer, &sensors, &dbusConnection, sensorsChanged,
-         updateType](const ManagedObjectType& sensorConfigurations) {
-        bool firstScan = sensorsChanged == nullptr;
-        std::vector<fs::path> paths;
-        if (!findFiles(fs::path("/sys/class/hwmon"), R"(in\d+_input)", paths))
+    bool firstScan = sensorsChanged == nullptr;
+    std::vector<fs::path> hwmonPaths;
+    std::vector<fs::path> inputPaths;
+
+    if (!findFiles(fs::path("/sys/class/hwmon"), "name", hwmonPaths))
+    {
+        std::cerr << "No hwmon sensors in system\n";
+        return;
+    }
+
+    boost::container::flat_set<std::string> directories;
+    for (const auto& hwmonPath : hwmonPaths)
+    {
+        std::ifstream nameFile(hwmonPath);
+        if (!nameFile.good())
         {
-            std::cerr << "No adc sensors in system\n";
+            std::cerr << "Failure finding hwmon path " << hwmonPath << "\n";
+            continue;
+        }
+        std::string driverName;
+        std::getline(nameFile, driverName);
+        nameFile.close();
+
+        if (std::find(supportedDrivers.begin(), supportedDrivers.end(),
+                      driverName) == supportedDrivers.end())
+        {
+            continue;
+        }
+
+        auto directory = hwmonPath.parent_path();
+
+        auto ret = directories.insert(directory.string());
+        if (!ret.second)
+        {
+            std::cerr << "Duplicate path " << directory.string() << "\n";
+            continue;
+        }
+
+        fs::path device = directory / "device";
+        std::string deviceName = fs::canonical(device).stem();
+        auto findHyphen = deviceName.find('-');
+        if (findHyphen == std::string::npos)
+        {
+            std::cerr << "found bad device" << deviceName << "\n";
+            continue;
+        }
+        std::optional<size_t> bus;
+        std::optional<size_t> addr;
+
+        if (deviceName != "iio-hwmon")
+        {
+            std::string busStr = deviceName.substr(0, findHyphen);
+            std::string addrStr = deviceName.substr(findHyphen + 1);
+            try
+            {
+                bus = std::stoi(busStr);
+                addr = std::stoi(addrStr, nullptr, 16);
+            }
+            catch (const std::invalid_argument&)
+            {
+                std::cerr << "Error parsing bus " << busStr << " addr "
+                          << addrStr << "\n";
+                continue;
+            }
+        }
+        inputPaths.clear();
+        if (!findFiles(directory, R"(in\d+_input)", inputPaths))
+        {
+            std::cerr << "No hwmon voltage sensors in the path: " << directory
+                      << "\n";
             return;
         }
 
-        // iterate through all found adc sensors, and try to match them with
-        // configuration
-        for (auto& path : paths)
+        for (const auto& path : inputPaths)
         {
-            if (!isAdc(path.parent_path()))
+            std::smatch match;
+            std::string inputPathStr = path.string();
+            std::regex_search(inputPathStr, match, inputRegex);
+            int hwmonInputIndex = 0;
+
+            try
             {
+                hwmonInputIndex = std::stoul(std::string(match[1]));
+
+                // Maintain backward compatibility with already existing
+                // Entity-Manager configs that use indexing starting from 0 for
+                // iio-hwmon sensors
+                if (deviceName == "iio-hwmon")
+                {
+                    hwmonInputIndex -= 1;
+                }
+            }
+            catch (const std::exception& e)
+            {
+                std::cerr << e.what() << '\n';
                 continue;
             }
-            std::smatch match;
-            std::string pathStr = path.string();
-
-            std::regex_search(pathStr, match, inputRegex);
-            std::string indexStr = *(match.begin() + 1);
-
-            auto directory = path.parent_path();
-            // convert to 0 based
-            size_t index = std::stoul(indexStr) - 1;
 
             const SensorData* sensorData = nullptr;
             const std::string* interfacePath = nullptr;
             const std::pair<std::string, SensorBaseConfigMap>*
                 baseConfiguration = nullptr;
+            const char* sensorType = nullptr;
             for (const auto& [path, cfgData] : sensorConfigurations)
             {
                 // clear it out each loop
@@ -125,11 +181,14 @@ void createSensors(
                     if (sensorBase != cfgData.end())
                     {
                         baseConfiguration = &(*sensorBase);
+                        sensorType = type;
                         break;
                     }
                 }
                 if (baseConfiguration == nullptr)
                 {
+                    std::cerr << "error finding base configuration for "
+                              << deviceName << "\n";
                     continue;
                 }
                 auto findIndex = baseConfiguration->second.find("Index");
@@ -140,32 +199,64 @@ void createSensors(
                     continue;
                 }
 
-                unsigned int number = std::visit(VariantToUnsignedIntVisitor(),
-                                                 findIndex->second);
-
-                if (number != index)
+                int inputIndex =
+                    std::visit(VariantToIntVisitor(), findIndex->second);
+                if (hwmonInputIndex != inputIndex)
                 {
                     continue;
                 }
 
                 sensorData = &cfgData;
+                if (std::string(sensorType) == std::string("I2CADC"))
+                {
+                    if (!bus || !addr)
+                    {
+                        std::cerr
+                            << "Skipping config entry because either bus or "
+                               "addr not found on fs\n";
+                        continue;
+                    }
+
+                    auto configBus = baseConfiguration->second.find("Bus");
+                    auto configAddress =
+                        baseConfiguration->second.find("Address");
+
+                    if (configBus == baseConfiguration->second.end() ||
+                        configAddress == baseConfiguration->second.end())
+                    {
+                        std::cerr << "error finding necessary entry in "
+                                     "configuration\n";
+                        continue;
+                    }
+
+                    const uint64_t* confBus =
+                        std::get_if<uint64_t>(&(configBus->second));
+                    const uint64_t* confAddr =
+                        std::get_if<uint64_t>(&(configAddress->second));
+                    if (confBus == nullptr || confAddr == nullptr)
+                    {
+                        std::cerr << "Cannot get bus or address, invalid "
+                                     "configuration\n";
+                        continue;
+                    }
+
+                    if ((*confBus != *bus) || (*confAddr != *addr))
+                    {
+                        std::cerr << "Configuration skipping " << *confBus
+                                  << "-" << *confAddr << " because not " << *bus
+                                  << "-" << *addr << "\n";
+                        continue;
+                    }
+                }
                 interfacePath = &path.str;
                 break;
             }
-            if (sensorData == nullptr)
-            {
-                if constexpr (debug)
-                {
-                    std::cerr << "failed to find match for " << path.string()
-                              << "\n";
-                }
-                continue;
-            }
 
-            if (baseConfiguration == nullptr)
+            if (interfacePath == nullptr)
             {
-                std::cerr << "error finding base configuration for"
-                          << path.string() << "\n";
+                // To avoid this error message, add your export map entry,
+                // from Entity Manager, to sensorTypes at the top of this file.
+                std::cerr << "failed to find match for " << deviceName << "\n";
                 continue;
             }
 
@@ -294,7 +385,26 @@ void createSensors(
                 *interfacePath, std::move(bridgeGpio));
             sensor->setupRead();
         }
-    });
+    }
+}
+
+void createSensors(
+    boost::asio::io_context& io, sdbusplus::asio::object_server& objectServer,
+    boost::container::flat_map<std::string, std::shared_ptr<ADCSensor>>&
+        sensors,
+    std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
+    const std::shared_ptr<boost::container::flat_set<std::string>>&
+        sensorsChanged,
+    UpdateType updateType)
+{
+    auto getter = std::make_shared<GetSensorConfiguration>(
+        dbusConnection,
+        [&io, &objectServer, &sensors, &dbusConnection, sensorsChanged,
+         updateType](const ManagedObjectType& sensorConfigurations) {
+            createSensorsCallback(io, objectServer, dbusConnection,
+                                  sensorConfigurations, sensors, sensorsChanged,
+                                  updateType);
+        });
 
     getter->getConfiguration(
         std::vector<std::string>{sensorTypes.begin(), sensorTypes.end()});

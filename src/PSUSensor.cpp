@@ -55,6 +55,12 @@ PSUSensor::PSUSensor(const std::string& path, const std::string& objectType,
 {
     buffer = std::make_shared<std::array<char, 128>>();
     std::string unitPath = sensor_paths::getPathForUnits(sensorUnits);
+    // enable filterZero for VR temp sensors
+    if (unitPath == "temperature" && (name.find("CPU") != std::string::npos))
+    {
+        filterZero = true;
+    }
+
     if constexpr (debug)
     {
         std::cerr << "Constructed sensor: path " << path << " type "
@@ -176,7 +182,6 @@ void PSUSensor::restartRead(void)
     waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
         if (ec == boost::asio::error::operation_aborted)
         {
-            std::cerr << "Failed to reschedule\n";
             return;
         }
         std::shared_ptr<PSUSensor> self = weakRef.lock();
@@ -220,11 +225,18 @@ void PSUSensor::handleResponse(const boost::system::error_code& err,
     try
     {
         rawValue = std::stod(bufferRef.data());
-        updateValue((rawValue / sensorFactor) + sensorOffset);
+        if (filterZero && rawValue == 0 && value != 0)
+        {
+            value = 0;
+            std::cerr << "INFO: Temperature " << name << " ignore first zero\n";
+        }
+        else
+        {
+            updateValue((rawValue / sensorFactor) + sensorOffset);
+        }
     }
     catch (const std::invalid_argument&)
     {
-        std::cerr << "Could not parse  input from " << path << "\n";
         incrementError();
     }
 

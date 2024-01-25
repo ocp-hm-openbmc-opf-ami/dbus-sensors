@@ -30,6 +30,20 @@ constexpr const char* cpuInventoryPath =
     "/xyz/openbmc_project/inventory/system/chassis/motherboard";
 const std::regex illegalDbusRegex("[^A-Za-z0-9_]");
 
+static const std::string ipmiSELAddMessage = "";
+static constexpr uint16_t selBMCGenID = 0x0020;
+static constexpr uint8_t osCriticalStop = 0x20;
+
+// Processor sensor
+static const std::string processorPath = "/xyz/openbmc_project/sensors/cpu/";
+static const std::vector<uint8_t> procPresence{0x07, 0xFF, 0xFF};
+
+// IPMI Sel
+static constexpr const char* ipmiService = "xyz.openbmc_project.Logging.IPMI";
+static constexpr const char* ipmiObjPath = "/xyz/openbmc_project/Logging/IPMI";
+static constexpr const char* ipmiIntf = "xyz.openbmc_project.Logging.IPMI";
+static constexpr const char* ipmiSelAddMethod = "IpmiSelAdd";
+
 using BasicVariantType =
     std::variant<std::vector<std::string>, std::string, int64_t, uint64_t,
                  double, int32_t, uint32_t, int16_t, uint16_t, uint8_t, bool>;
@@ -45,10 +59,18 @@ using GetSubTreeType = std::vector<
               std::vector<std::pair<std::string, std::vector<std::string>>>>>;
 using Association = std::tuple<std::string, std::string, std::string>;
 
+using AssociationList =
+    std::vector<std::tuple<std::string, std::string, std::string>>;
+
 inline std::string escapeName(const std::string& sensorName)
 {
     return boost::replace_all_copy(sensorName, " ", "_");
 }
+
+// Add IPMI & Refish Log
+void addSelEntry(std::shared_ptr<sdbusplus::asio::connection>& conn,
+                 std::vector<std::string> logData,
+                 std::vector<uint8_t> eventData, bool assert);
 
 enum class PowerState
 {
@@ -380,7 +402,7 @@ struct GetSensorConfiguration :
 std::optional<std::tuple<std::string, std::string, std::string>>
     splitFileName(const std::filesystem::path& filePath);
 std::optional<double> readFile(const std::string& thresholdFile,
-                               const double& scaleFactor);
+                               const double& scaleFactor, bool nanOk = false);
 void setupManufacturingModeMatch(sdbusplus::asio::connection& conn);
 bool getManufacturingMode();
 std::vector<std::unique_ptr<sdbusplus::bus::match_t>>

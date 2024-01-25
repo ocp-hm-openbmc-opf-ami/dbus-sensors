@@ -54,7 +54,7 @@ struct Threshold
 
 void assertThresholds(Sensor* sensor, double assertValue,
                       thresholds::Level level, thresholds::Direction direction,
-                      bool assert);
+                      bool assert, bool force = false);
 
 struct TimerUsed
 {
@@ -117,7 +117,8 @@ struct ThresholdTimer
 bool parseThresholdsFromConfig(
     const SensorData& sensorData,
     std::vector<thresholds::Threshold>& thresholdVector,
-    const std::string* matchLabel = nullptr, const int* sensorIndex = nullptr);
+    const std::string* matchLabel = nullptr, const int* sensorIndex = nullptr,
+    const std::string* sensorPathStr = nullptr);
 
 bool parseThresholdsFromAttr(
     std::vector<thresholds::Threshold>& thresholdVector,

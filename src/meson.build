@@ -79,6 +79,22 @@ if get_option('adc').allowed()
     )
 endif
 
+if get_option('dbus-adc').enabled()
+    executable(
+        'dbusadcsensor',
+        'DBusADCSensor.cpp',
+        'DBusADCSensorMain.cpp',
+        dependencies: [
+            default_deps,
+            gpiodcxx,
+            thresholds_dep,
+           utils_dep,
+        ],
+        install: true,
+    )
+endif
+
+
 if get_option('intel-cpu').allowed()
     executable(
         'intelcpusensor',
@@ -87,6 +103,7 @@ if get_option('intel-cpu').allowed()
         dependencies: [
             default_deps,
             gpiodcxx,
+	    libudev,
             thresholds_dep,
             utils_dep,
             peci_dep,
@@ -222,6 +239,125 @@ if get_option('external').allowed()
         dependencies: [
             default_deps,
             thresholds_dep,
+            utils_dep,
+        ],
+        install: true,
+    )
+endif
+
+if get_option('procstatus').enabled()
+    executable(
+        'processorstatus',
+        'ProcessorStatus.cpp',
+        'ProcessorStatusMain.cpp',
+        dependencies: [
+            default_deps,
+            gpiodcxx,
+            utils_dep,
+        ],
+        install: true,
+    )
+endif
+
+if get_option('system').enabled()
+    executable(
+        'watchdogsensor',
+        'WatchdogSensor.cpp',
+        'SystemSensorMain.cpp',
+        dependencies: [
+            default_deps,
+            utils_dep,
+        ],
+        install: true,
+    )
+endif
+
+if get_option('powerunit').enabled()
+    executable(
+        'powerunitstatus',
+        'PowerUnit.cpp',
+        'PowerUnitMain.cpp',
+        dependencies: [
+            default_deps,
+            utils_dep,
+        ],
+        install: true,
+    )
+endif
+
+if get_option('acpisystem').enabled()
+    executable(
+        'acpisystemstatus',
+        'ACPISystemStatus.cpp',
+        'ACPISystemStatusMain.cpp',
+        dependencies: [
+            default_deps,
+            utils_dep,
+        ],
+        install: true,
+    )
+endif
+
+if get_option('psustatus').enabled()
+    executable(
+        'psustatus',
+        'PsuStatus.cpp',
+        'PsuStatusMain.cpp',
+        dependencies: [
+            default_deps,
+            i2c,
+            utils_dep,
+        ],
+        install: true,
+        )
+endif
+
+if get_option('osstatus').enabled()
+    executable(
+        'osstatus',
+        'OSStatus.cpp',
+        'OSStatusMain.cpp',
+        dependencies: [
+            default_deps,
+            utils_dep,
+        ],
+        install: true,
+        )
+endif
+
+if get_option('batterystatus').enabled()
+    executable(
+        'batterystatus',
+        'BatteryStatus.cpp',
+        'BatteryStatusMain.cpp',
+        dependencies: [
+            default_deps,
+            utils_dep,
+        ],
+        install: true,
+    )
+endif
+
+if get_option('acpidevice').enabled()
+    executable(
+        'acpidevicestatus',
+        'ACPIDeviceStatus.cpp',
+        'ACPIDeviceStatusMain.cpp',
+        dependencies: [
+            default_deps,
+            utils_dep,
+        ],
+        install: true,
+    )
+endif
+
+if get_option('digital').enabled()
+    executable(
+        'digitaldiscrete',
+        'DigitalDiscrete.cpp',
+        'DigitalDiscreteMain.cpp',
+        dependencies: [
+            default_deps,
             utils_dep,
         ],
         install: true,

@@ -1,0 +1,19 @@
+[Unit]
+Description=DBus ADC Sensor
+StopWhenUnneeded=false
+
+Requires=xyz.openbmc_project.EntityManager.service \
+    xyz.openbmc_project.scm_i2c_memory_map.service
+
+Before=xyz.openbmc_project.cpusensor.service
+
+After=xyz.openbmc_project.EntityManager.service \
+    xyz.openbmc_project.scm_i2c_memory_map.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/dbusadcsensor
+
+[Install]
+WantedBy=multi-user.target

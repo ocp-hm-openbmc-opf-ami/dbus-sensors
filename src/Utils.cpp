@@ -19,8 +19,11 @@
 #include "dbus-sensor_config.h"
 
 #include "DeviceMgmt.hpp"
+#include "xyz/openbmc_project/Logging/Entry/server.hpp"
 
 #include <boost/container/flat_map.hpp>
+#include <phosphor-logging/elog.hpp>
+#include <phosphor-logging/log.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 #include <sdbusplus/bus/match.hpp>
@@ -37,7 +40,10 @@
 #include <vector>
 
 namespace fs = std::filesystem;
-
+using ErrLvl = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
+auto sevLvl = ErrLvl::Informational;
+using namespace phosphor::logging;
+using AdditionalData = std::map<std::string, std::string>;
 static bool powerStatusOn = false;
 static bool biosHasPost = false;
 static bool manufacturingMode = false;
@@ -46,6 +52,36 @@ static bool chassisStatusOn = false;
 static std::unique_ptr<sdbusplus::bus::match_t> powerMatch = nullptr;
 static std::unique_ptr<sdbusplus::bus::match_t> postMatch = nullptr;
 static std::unique_ptr<sdbusplus::bus::match_t> chassisMatch = nullptr;
+
+void addSelEntry(std::shared_ptr<sdbusplus::asio::connection>& conn,
+                 const std::vector<std::string> logData,
+                 const std::vector<uint8_t> eventData, bool assert)
+{
+    const std::string sensorName = logData[0];
+    const std::string eventName = logData[1];
+    const std::string sensorPath = logData[2];
+    AdditionalData addData;
+    std::stringstream stream;
+
+    stream << std::hex << std::uppercase << std::setfill('0');
+    stream << std::setw(2) << static_cast<int>(eventData[0]);
+    auto selDataStr = stream.str();
+    std::string redfishId = sensorName + " logged a " + eventName ;
+
+    // Log SEL event
+    auto method = conn->new_method_call(ipmiService, ipmiObjPath, ipmiIntf,
+                                        ipmiSelAddMethod);
+    method.append(redfishId, sensorPath, eventData, assert, selBMCGenID, addData);
+    try
+    {
+        auto reply = conn->call(method);
+    }
+    catch (sdbusplus::exception_t&)
+    {
+        std::cerr << "error adding SEL Event for " << sensorPath << "\n";
+        return;
+    }
+}
 
 /**
  * return the contents of a file
@@ -679,7 +715,7 @@ void createInventoryAssoc(
 }
 
 std::optional<double> readFile(const std::string& thresholdFile,
-                               const double& scaleFactor)
+                               const double& scaleFactor, bool nanOk)
 {
     std::string line;
     std::ifstream labelFile(thresholdFile);
@@ -694,6 +730,11 @@ std::optional<double> readFile(const std::string& thresholdFile,
         }
         catch (const std::invalid_argument&)
         {
+            if (nanOk)
+            {
+                // indicate file exists, but read failed
+                return std::numeric_limits<double>::quiet_NaN();
+            }
             return std::nullopt;
         }
     }

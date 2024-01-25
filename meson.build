@@ -54,6 +54,11 @@ if not sdbusplus.found()
   sdbusplus = sdbusplus.as_system('system')
 endif
 
+boost_dep = dependency(
+    'boost',
+    modules: ['coroutine'],
+)
+
 phosphor_logging_dep = dependency('phosphor-logging')
 nlohmann_json_dep = dependency('nlohmann_json', include_type: 'system')
 
@@ -78,8 +83,11 @@ if not uring.found()
   uring = uring.as_system('system')
 endif
 
+libudev = dependency('libudev', required : false, include_type: 'system')
+
 default_deps = [
     boost,
+    boost_dep,
     nlohmann_json_dep,
     phosphor_logging_dep,
     sdbusplus,

@@ -1,5 +1,6 @@
 unit_files = [
     ['adc', 'xyz.openbmc_project.adcsensor.service'],
+    ['dbus-adc', 'xyz.openbmc_project.dbusadcsensor.service'],
     ['intel-cpu', 'xyz.openbmc_project.intelcpusensor.service'],
     ['exit-air', 'xyz.openbmc_project.exitairsensor.service'],
     ['fan', 'xyz.openbmc_project.fansensor.service'],
@@ -10,6 +11,15 @@ unit_files = [
     ['nvme', 'xyz.openbmc_project.nvmesensor.service'],
     ['psu', 'xyz.openbmc_project.psusensor.service'],
     ['external', 'xyz.openbmc_project.externalsensor.service'],
+    ['procstatus', 'xyz.openbmc_project.processorstatus.service'],
+    ['system', 'xyz.openbmc_project.systemsensor.service'],
+    ['powerunit', 'xyz.openbmc_project.powerunitstatus.service'],
+    ['acpisystem', 'xyz.openbmc_project.acpisystemstatus.service'],
+    ['psustatus', 'xyz.openbmc_project.psustatus.service'],
+    ['osstatus', 'xyz.openbmc_project.osstatus.service'],
+    ['batterystatus', 'xyz.openbmc_project.batterystatus.service'],
+    ['acpidevice', 'xyz.openbmc_project.acpidevicestatus.service'],
+    ['digital', 'xyz.openbmc_project.digitaldiscrete.service'],
 ]
 
 foreach tuple : unit_files

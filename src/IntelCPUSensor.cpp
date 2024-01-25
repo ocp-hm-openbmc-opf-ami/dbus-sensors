@@ -1,5 +1,5 @@
 /*
-// Copyright (c) 2018 Intel Corporation
+// Copyright (c) 2018-2021 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -41,54 +41,99 @@ IntelCPUSensor::IntelCPUSensor(
     boost::asio::io_context& io, const std::string& sensorName,
     std::vector<thresholds::Threshold>&& thresholdsIn,
     const std::string& sensorConfiguration, int cpuId, bool show,
-    double dtsOffset) :
+    double dtsOffset, const SensorProperties& sensorProperties) :
     Sensor(escapeName(sensorName), std::move(thresholdsIn), sensorConfiguration,
-           objectType, false, false, 0, 0, conn, PowerState::on),
-    objServer(objectServer), inputDev(io), waitTimer(io),
+           objectType, false, false, sensorProperties.max, sensorProperties.min,
+           conn, PowerState::on),
+    objServer(objectServer), inputDev(io),
     nameTcontrol("Tcontrol CPU" + std::to_string(cpuId)), path(path),
     privTcontrol(std::numeric_limits<double>::quiet_NaN()),
-    dtsOffset(dtsOffset), show(show), pollTime(IntelCPUSensor::sensorPollMs)
+    dtsOffset(dtsOffset), show(show), scaleFactor(sensorProperties.scaleFactor)
 
 {
     if (show)
     {
-        if (auto fileParts = splitFileName(path))
+        std::string interfacePath = sensorProperties.path + name;
+        sensorInterface = objectServer.add_interface(
+            interfacePath, "xyz.openbmc_project.Sensor.Value");
+        for (const auto& threshold : thresholds)
         {
-            auto& [type, nr, item] = *fileParts;
-            std::string interfacePath;
-            const char* units = nullptr;
-            if (type == "power")
-            {
-                interfacePath = "/xyz/openbmc_project/sensors/power/" + name;
-                units = sensor_paths::unitWatts;
-                minValue = 0;
-                maxValue = 511;
-            }
-            else
-            {
-                interfacePath = "/xyz/openbmc_project/sensors/temperature/" +
-                                name;
-                units = sensor_paths::unitDegreesC;
-                minValue = -128;
-                maxValue = 127;
-            }
-
-            sensorInterface = objectServer.add_interface(
-                interfacePath, "xyz.openbmc_project.Sensor.Value");
-            for (const auto& threshold : thresholds)
-            {
-                std::string interface =
-                    thresholds::getInterface(threshold.level);
-                thresholdInterfaces[static_cast<size_t>(threshold.level)] =
-                    objectServer.add_interface(interfacePath, interface);
-            }
-            association = objectServer.add_interface(interfacePath,
-                                                     association::interface);
-
-            setInitialProperties(units);
+            std::string interface = thresholds::getInterface(threshold.level);
+            thresholdInterfaces[static_cast<size_t>(threshold.level)] =
+                objectServer.add_interface(interfacePath, interface);
         }
+        association =
+            objectServer.add_interface(interfacePath, association::interface);
+        setInitialProperties(sensorProperties.units);
     }
+    // call setup always as not all sensors call setInitialProperties
+    setupPowerMatch(conn);
+}
 
+// Create a  dummy "not available" IntelCPUSensor
+// This is used to indicate a missing required sensor for
+// other services like fan control
+IntelCPUSensor::IntelCPUSensor(
+    const std::string& objectType, sdbusplus::asio::object_server& objectServer,
+    std::shared_ptr<sdbusplus::asio::connection>& conn,
+    boost::asio::io_context& io, const std::string& sensorName,
+    std::vector<thresholds::Threshold>&& thresholdsIn,
+    const std::string& sensorConfiguration) :
+    Sensor(escapeName(sensorName), std::move(thresholdsIn), sensorConfiguration,
+           objectType, false, false, 0, 0, conn, PowerState::on),
+    objServer(objectServer), inputDev(io),
+    privTcontrol(std::numeric_limits<double>::quiet_NaN()), dtsOffset(0),
+    show(true), minMaxReadCounter(0)
+{
+    // assume it is a temperature sensor for now
+    // support for other type can be added later
+    std::string interfacePath =
+        "/xyz/openbmc_project/sensors/temperature/" + name;
+    const char* units = sensor_paths::unitDegreesC;
+    minValue = -128;
+    maxValue = 127;
+    sensorInterface = objectServer.add_interface(
+        interfacePath, "xyz.openbmc_project.Sensor.Value");
+
+    sensorInterface->register_property("Unit", units);
+    sensorInterface->register_property("MaxValue", maxValue);
+    sensorInterface->register_property("MinValue", minValue);
+    sensorInterface->register_property(
+        "Value", value, [&](const double& newValue, double& oldValue) {
+            return setSensorValue(newValue, oldValue);
+        });
+    if (!sensorInterface->initialize())
+    {
+        std::cerr << "error initializing value interface\n";
+    }
+    if (!availableInterface)
+    {
+        availableInterface = std::make_shared<sdbusplus::asio::dbus_interface>(
+            conn, sensorInterface->get_object_path(), availableInterfaceName);
+        availableInterface->register_property(
+            "Available", false, [this](const bool propIn, bool& old) {
+                if (propIn == old)
+                {
+                    return 1;
+                }
+                old = propIn;
+                if (!propIn)
+                {
+                    updateValue(std::numeric_limits<double>::quiet_NaN());
+                }
+                return 1;
+            });
+        availableInterface->initialize();
+    }
+    if (!operationalInterface)
+    {
+        operationalInterface =
+            std::make_shared<sdbusplus::asio::dbus_interface>(
+                conn, sensorInterface->get_object_path(),
+                operationalInterfaceName);
+        operationalInterface->register_property("Functional", true);
+        operationalInterface->initialize();
+    }
     // call setup always as not all sensors call setInitialProperties
     setupPowerMatch(conn);
 }
@@ -97,7 +142,6 @@ IntelCPUSensor::~IntelCPUSensor()
 {
     // close the input dev to cancel async operations
     inputDev.close();
-    waitTimer.cancel();
     if (show)
     {
         for (const auto& iface : thresholdInterfaces)
@@ -111,32 +155,17 @@ IntelCPUSensor::~IntelCPUSensor()
     }
 }
 
-void IntelCPUSensor::restartRead(void)
-{
-    std::weak_ptr<IntelCPUSensor> weakRef = weak_from_this();
-    waitTimer.expires_after(std::chrono::milliseconds(pollTime));
-    waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
-        if (ec == boost::asio::error::operation_aborted)
-        {
-            std::cerr << "Failed to reschedule\n";
-            return;
-        }
-        std::shared_ptr<IntelCPUSensor> self = weakRef.lock();
-
-        if (self)
-        {
-            self->setupRead();
-        }
-    });
-}
-
-void IntelCPUSensor::setupRead(void)
+void IntelCPUSensor::setupRead(boost::asio::yield_context yield)
 {
     if (readingStateGood())
     {
         inputDev.close();
 
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+        if (path.empty())
+        {
+            return;
+        }
         fd = open(path.c_str(), O_RDONLY | O_NONBLOCK);
         if (fd < 0)
         {
@@ -150,34 +179,37 @@ void IntelCPUSensor::setupRead(void)
     {
         markAvailable(false);
         updateValue(std::numeric_limits<double>::quiet_NaN());
-        restartRead();
         return;
     }
 
     std::weak_ptr<IntelCPUSensor> weakRef = weak_from_this();
+    boost::system::error_code ec;
     inputDev.async_wait(boost::asio::posix::descriptor_base::wait_read,
-                        [weakRef](const boost::system::error_code& ec) {
-        std::shared_ptr<IntelCPUSensor> self = weakRef.lock();
-
-        if (self)
-        {
-            self->handleResponse(ec);
-        }
-    });
+                        yield[ec]);
+    std::shared_ptr<IntelCPUSensor> self = weakRef.lock();
+    if (self)
+    {
+        self->handleResponse(ec);
+    }
 }
 
 void IntelCPUSensor::updateMinMaxValues(void)
 {
+    double newMin = std::numeric_limits<double>::quiet_NaN();
+    double newMax = std::numeric_limits<double>::quiet_NaN();
+
     const boost::container::flat_map<
         std::string,
         std::vector<std::tuple<const char*, std::reference_wrapper<double>,
-                               const char*>>>
+                               const char*, std::reference_wrapper<double>>>>
         map = {
             {
                 "cap",
                 {
-                    std::make_tuple("cap_max", std::ref(maxValue), "MaxValue"),
-                    std::make_tuple("cap_min", std::ref(minValue), "MinValue"),
+                    std::make_tuple("cap_max", std::ref(maxValue), "MaxValue",
+                                    std::ref(newMax)),
+                    std::make_tuple("cap_min", std::ref(minValue), "MinValue",
+                                    std::ref(newMin)),
                 },
             },
         };
@@ -190,26 +222,25 @@ void IntelCPUSensor::updateMinMaxValues(void)
         {
             for (const auto& vectorItem : mapIt->second)
             {
-                const auto& [suffix, oldValue, dbusName] = vectorItem;
+                const auto& [suffix, oldValue, dbusName, newValue] = vectorItem;
                 auto attrPath = boost::replace_all_copy(path, fileItem, suffix);
-                if (auto newVal = readFile(attrPath,
-                                           IntelCPUSensor::sensorScaleFactor))
+                if (auto tmp = readFile(attrPath, scaleFactor))
                 {
-                    updateProperty(sensorInterface, oldValue, *newVal,
-                                   dbusName);
+                    newValue.get() = *tmp;
                 }
                 else
                 {
-                    if (isPowerOn())
-                    {
-                        updateProperty(sensorInterface, oldValue, 0, dbusName);
-                    }
-                    else
-                    {
-                        updateProperty(sensorInterface, oldValue,
-                                       std::numeric_limits<double>::quiet_NaN(),
-                                       dbusName);
-                    }
+                    newValue.get() = std::numeric_limits<double>::quiet_NaN();
+                }
+            }
+            if (std::isfinite(newMin) && std::isfinite(newMax) &&
+                (newMin < newMax))
+            {
+                for (const auto& vectorItem : mapIt->second)
+                {
+                    auto& [suffix, oldValue, dbusName, newValue] = vectorItem;
+                    updateProperty(sensorInterface, oldValue, newValue,
+                                   dbusName);
                 }
             }
         }
@@ -232,7 +263,6 @@ void IntelCPUSensor::handleResponse(const boost::system::error_code& err)
                 std::cerr << name << " interface down!\n";
                 loggedInterfaceDown = true;
             }
-            pollTime = static_cast<size_t>(IntelCPUSensor::sensorPollMs) * 10U;
             markFunctional(false);
         }
         return;
@@ -241,7 +271,6 @@ void IntelCPUSensor::handleResponse(const boost::system::error_code& err)
 
     if (err)
     {
-        pollTime = sensorFailedPollTimeMs;
         incrementError();
         return;
     }
@@ -261,7 +290,7 @@ void IntelCPUSensor::handleResponse(const boost::system::error_code& err)
         try
         {
             rawValue = std::stod(response);
-            double nvalue = rawValue / IntelCPUSensor::sensorScaleFactor;
+            double nvalue = rawValue / scaleFactor;
 
             if (show)
             {
@@ -279,20 +308,21 @@ void IntelCPUSensor::handleResponse(const boost::system::error_code& err)
             double gTcontrol = gCpuSensors[nameTcontrol]
                                    ? gCpuSensors[nameTcontrol]->value
                                    : std::numeric_limits<double>::quiet_NaN();
-            if (gTcontrol != privTcontrol)
+            if (std::isfinite(gTcontrol) && (gTcontrol != privTcontrol))
             {
-                privTcontrol = gTcontrol;
-
-                if (!thresholds.empty())
+                // update thresholds when
+                // 1) A different valid Tcontrol value is received
+                // 2) New threshold values have been read successfully
+                // Note: current thresholds can be empty if hwmon attr was not
+                // ready when sensor was first created
+                std::vector<thresholds::Threshold> newThresholds;
+                if (parseThresholdsFromAttr(newThresholds, path, scaleFactor,
+                                            dtsOffset))
                 {
-                    std::vector<thresholds::Threshold> newThresholds;
-                    if (parseThresholdsFromAttr(
-                            newThresholds, path,
-                            IntelCPUSensor::sensorScaleFactor, dtsOffset))
+                    if (!std::equal(thresholds.begin(), thresholds.end(),
+                                    newThresholds.begin(), newThresholds.end()))
                     {
-                        if (!std::equal(thresholds.begin(), thresholds.end(),
-                                        newThresholds.begin(),
-                                        newThresholds.end()))
+                        if (!newThresholds.empty())
                         {
                             thresholds = newThresholds;
                             if (show)
@@ -300,13 +330,22 @@ void IntelCPUSensor::handleResponse(const boost::system::error_code& err)
                                 thresholds::updateThresholds(this);
                             }
                         }
-                    }
-                    else
-                    {
-                        std::cerr << "Failure to update thresholds for " << name
+                        std::cout << name << ": Tcontrol changed from "
+                                  << privTcontrol << " to " << gTcontrol
                                   << "\n";
+                        for (auto& threshold : thresholds)
+                        {
+                            std::cout << name << ": new threshold value "
+                                      << threshold.value << "\n";
+                        }
                     }
                 }
+		else
+                {
+                    std::cerr << "Failure to update thresholds for " << name
+                              << "\n";
+                }
+                privTcontrol = gTcontrol;
             }
         }
         catch (const std::invalid_argument&)
@@ -316,10 +355,8 @@ void IntelCPUSensor::handleResponse(const boost::system::error_code& err)
     }
     else
     {
-        pollTime = sensorFailedPollTimeMs;
         incrementError();
     }
-    restartRead();
 }
 
 void IntelCPUSensor::checkThresholds(void)

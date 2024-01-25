@@ -17,6 +17,15 @@
 #include <variant>
 #include <vector>
 
+struct SensorProperties
+{
+    std::string path;
+    std::string units;
+    double max;
+    double min;
+    unsigned int scaleFactor;
+};
+
 class IntelCPUSensor :
     public Sensor,
     public std::enable_shared_from_this<IntelCPUSensor>
@@ -28,32 +37,37 @@ class IntelCPUSensor :
                    boost::asio::io_context& io, const std::string& sensorName,
                    std::vector<thresholds::Threshold>&& thresholds,
                    const std::string& configuration, int cpuId, bool show,
-                   double dtsOffset);
+                   double dtsOffset, const SensorProperties& sensorProperties);
+    // Create a CPUSensor without a path to sensor value
+    IntelCPUSensor(const std::string& objectType,
+                   sdbusplus::asio::object_server& objectServer,
+                   std::shared_ptr<sdbusplus::asio::connection>& conn,
+                   boost::asio::io_context& io, const std::string& sensorName,
+                   std::vector<thresholds::Threshold>&& thresholdsIn,
+                   const std::string& sensorConfiguration);
+
     ~IntelCPUSensor() override;
     static constexpr unsigned int sensorScaleFactor = 1000;
-    static constexpr unsigned int sensorPollMs = 1000;
     static constexpr size_t warnAfterErrorCount = 10;
     static constexpr const char* labelTcontrol = "Tcontrol";
-    void setupRead(void);
+    void setupRead(boost::asio::yield_context yield);
 
   private:
     sdbusplus::asio::object_server& objServer;
     boost::asio::streambuf readBuf;
     boost::asio::posix::stream_descriptor inputDev;
-    boost::asio::steady_timer waitTimer;
     std::string nameTcontrol;
     std::string path;
     double privTcontrol;
     double dtsOffset;
     bool show;
-    size_t pollTime;
     bool loggedInterfaceDown = false;
     uint8_t minMaxReadCounter{0};
     int fd{};
+    unsigned int scaleFactor;
     void handleResponse(const boost::system::error_code& err);
     void checkThresholds(void) override;
     void updateMinMaxValues(void);
-    void restartRead(void);
 };
 
 extern boost::container::flat_map<std::string, std::shared_ptr<IntelCPUSensor>>

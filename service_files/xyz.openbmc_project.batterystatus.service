@@ -1,0 +1,15 @@
+[Unit]
+Description=Battery Sensor
+StopWhenUnneeded=false
+Requires=xyz.openbmc_project.EntityManager.service
+After=xyz.openbmc_project.EntityManager.service
+Requires=xyz.openbmc_project.adcsensor.service
+After=xyz.openbmc_project.adcsensor.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/batterystatus
+
+[Install]
+WantedBy=multi-user.target

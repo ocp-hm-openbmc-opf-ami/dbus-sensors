@@ -66,6 +66,7 @@ std::optional<RedundancySensor> systemRedundancy;
 static const std::map<std::string, FanTypes> compatibleFanTypes = {
     {"aspeed,ast2400-pwm-tacho", FanTypes::aspeed},
     {"aspeed,ast2500-pwm-tacho", FanTypes::aspeed},
+    {"aspeed,ast2600-pwm-tacho", FanTypes::aspeed},
     {"nuvoton,npcm750-pwm-fan", FanTypes::nuvoton},
     {"nuvoton,npcm845-pwm-fan", FanTypes::nuvoton},
     {"hpe,gxp-fan-ctrl", FanTypes::hpe}
@@ -445,7 +446,7 @@ void createSensors(
                 }
             }
             std::optional<RedundancySensor>* redundancy = nullptr;
-            if (fanType == FanTypes::aspeed)
+            if ((fanType == FanTypes::aspeed) || (fanType == FanTypes::i2c))
             {
                 redundancy = &systemRedundancy;
             }

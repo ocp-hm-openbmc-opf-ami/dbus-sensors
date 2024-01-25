@@ -56,6 +56,11 @@ class PSUSensor : public Sensor, public std::enable_shared_from_this<PSUSensor>
     void checkThresholds(void) override;
     unsigned int sensorPollMs = defaultSensorPollMs;
 
+    // Sometimes VR Temperature sensor read returns false zero degree reading
+    // It is not a real concern for VRs, add a filter to only assert thresholds
+    // if more than one zero are read in consecutive polling cycles
+    bool filterZero = false;
+
     static constexpr size_t warnAfterErrorCount = 10;
 
   public:

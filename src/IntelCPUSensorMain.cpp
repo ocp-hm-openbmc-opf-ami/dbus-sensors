@@ -19,9 +19,11 @@
 #include "VariantVisitors.hpp"
 
 #include <fcntl.h>
+#include <libudev.h>
 #include <peci.h>
 
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/asio/posix/stream_descriptor.hpp>
 #include <boost/container/flat_map.hpp>
 #include <boost/container/flat_set.hpp>
 #include <sdbusplus/asio/connection.hpp>
@@ -29,11 +31,11 @@
 #include <sdbusplus/bus/match.hpp>
 
 #include <array>
-#include <cerrno>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <regex>
 #include <sstream>
 #include <stdexcept>
@@ -51,6 +53,18 @@
 // clang-format on
 
 static constexpr bool debug = false;
+static std::unique_ptr<boost::asio::steady_timer> waitTimer = nullptr;
+static bool sensorMapUpdated = false;
+
+static constexpr size_t sensorPollLoopMs = 1000;
+static constexpr size_t sensorEmptyWaitMs = 10000;
+static constexpr size_t failSensorLimit =
+    5; // peci timeout is 700ms, 5 timeout would be 3.5seconds
+static constexpr size_t sensorFailThrottleMs = 3000;
+
+static constexpr size_t fastPingSeconds = 1;
+static constexpr size_t slowPingSeconds = 5;
+static constexpr size_t failPingSeconds = 15;
 
 boost::container::flat_map<std::string, std::shared_ptr<IntelCPUSensor>>
     gCpuSensors;
@@ -68,13 +82,15 @@ enum State
 struct CPUConfig
 {
     CPUConfig(const uint64_t& bus, const uint64_t& addr,
-              const std::string& name, const State& state) :
+              const std::string& name, const std::string& busName,
+              const State& state) :
         bus(bus),
-        addr(addr), name(name), state(state)
+        addr(addr), name(name), busName(busName), state(state)
     {}
     int bus;
     int addr;
     std::string name;
+    std::string busName;
     State state;
 
     bool operator<(const CPUConfig& rhs) const
@@ -95,8 +111,20 @@ static constexpr auto sensorTypes{std::to_array<const char*>({"XeonCPU"})};
 static constexpr auto hiddenProps{std::to_array<const char*>(
     {IntelCPUSensor::labelTcontrol, "Tthrottle", "Tjmax"})};
 
+static const boost::container::flat_map<std::string, SensorProperties>
+    sensorPropertiesMap = {
+        {"power",
+         {"/xyz/openbmc_project/sensors/power/", sensor_paths::unitWatts, 511,
+          0, 1000}},
+        {"energy",
+         {"/xyz/openbmc_project/sensors/energy/", sensor_paths::unitJoules,
+          std::numeric_limits<uint32_t>::max() / 1000000, 0.0, 1000000}},
+        {"temp",
+         {"/xyz/openbmc_project/sensors/temperature/",
+          sensor_paths::unitDegreesC, 127.0, -128.0, 1000}}};
+
 void detectCpuAsync(
-    boost::asio::steady_timer& pingTimer,
+    boost::asio::steady_timer& pingTimer, const size_t pingSeconds,
     boost::asio::steady_timer& creationTimer, boost::asio::io_context& io,
     sdbusplus::asio::object_server& objectServer,
     std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
@@ -285,7 +313,8 @@ bool createSensors(boost::asio::io_context& io,
 
         auto directory = hwmonNamePath.parent_path();
         std::vector<fs::path> inputPaths;
-        if (!findFiles(directory, R"((temp|power)\d+_(input|average|cap)$)",
+        if (!findFiles(directory,
+                       R"((temp|power|energy)\d+_(input|average|cap)$)",
                        inputPaths, 0))
         {
             std::cerr << "No temperature sensors in system\n";
@@ -321,8 +350,8 @@ bool createSensors(boost::asio::io_context& io,
             {
                 if (debug)
                 {
-                    std::cout << "Skipped: " << inputPath << ": " << sensorName
-                              << " is already created\n";
+                    std::cout << "Will be replaced: " << inputPath << ": "
+                              << sensorName << " is already created\n";
                 }
                 continue;
             }
@@ -354,6 +383,16 @@ bool createSensors(boost::asio::io_context& io,
                 }
             }
 
+            const auto& it = sensorPropertiesMap.find(type);
+            if (it == sensorPropertiesMap.end())
+            {
+                std::cerr
+                    << "Failure getting sensor properties for sensor type: "
+                    << type << "\n";
+                continue;
+            }
+            const SensorProperties& prop = it->second;
+
             std::vector<thresholds::Threshold> sensorThresholds;
             std::string labelHead = label.substr(0, label.find(' '));
             parseThresholdsFromConfig(*sensorData, sensorThresholds,
@@ -361,8 +400,7 @@ bool createSensors(boost::asio::io_context& io,
             if (sensorThresholds.empty())
             {
                 if (!parseThresholdsFromAttr(sensorThresholds, inputPathStr,
-                                             IntelCPUSensor::sensorScaleFactor,
-                                             dtsOffset))
+                                             prop.scaleFactor, dtsOffset))
                 {
                     std::cerr << "error populating thresholds for "
                               << sensorName << "\n";
@@ -374,8 +412,8 @@ bool createSensors(boost::asio::io_context& io,
             sensorPtr = std::make_shared<IntelCPUSensor>(
                 inputPathStr, sensorType, objectServer, dbusConnection, io,
                 sensorName, std::move(sensorThresholds), *interfacePath, cpuId,
-                show, dtsOffset);
-            sensorPtr->setupRead();
+                show, dtsOffset, prop);
+            sensorMapUpdated = true;
             createdSensors.insert(sensorName);
             if (debug)
             {
@@ -392,6 +430,69 @@ bool createSensors(boost::asio::io_context& io,
     }
 
     return true;
+}
+
+bool doWait(boost::asio::yield_context yield, const size_t delay)
+{
+    boost::system::error_code ec;
+    waitTimer->expires_after(std::chrono::milliseconds(delay));
+    waitTimer->async_wait(yield[ec]);
+    if (ec == boost::asio::error::operation_aborted)
+    {
+        return false;
+    }
+    if (ec)
+    {
+        std::cerr << "Timer failed\n";
+        return false;
+    }
+    return true;
+}
+
+void pollCPUSensors(boost::asio::yield_context yield)
+{
+    size_t failSensorCnt = 0;
+    while (true)
+    {
+        sensorMapUpdated = false;
+
+        size_t sensorCnt = gCpuSensors.size();
+        if (sensorCnt == 0)
+        {
+            if (!doWait(yield, sensorEmptyWaitMs))
+            {
+                throw std::runtime_error("Wait timer failed");
+            }
+            continue;
+        }
+
+        size_t waitMs = sensorPollLoopMs / sensorCnt;
+        for (auto& [name, sensor] : gCpuSensors)
+        {
+            sensor->setupRead(yield);
+            if (!std::isfinite(sensor->value))
+            {
+                failSensorCnt++;
+            }
+            if (failSensorCnt >= failSensorLimit)
+            {
+                waitMs = sensorFailThrottleMs;
+                failSensorCnt = 0;
+            }
+            else
+            {
+                waitMs = sensorPollLoopMs / sensorCnt;
+            }
+            if (!doWait(yield, waitMs))
+            {
+                throw std::runtime_error("Wait timer failed");
+            }
+            if (sensorMapUpdated)
+            {
+                break;
+            }
+        }
+    }
 }
 
 bool exportDevice(const CPUConfig& config)
@@ -468,6 +569,7 @@ void detectCpu(boost::asio::steady_timer& pingTimer,
                ManagedObjectType& sensorConfigs)
 {
     size_t rescanDelaySeconds = 0;
+    size_t pingSeconds = fastPingSeconds;
     static bool keepPinging = false;
     int peciFd = -1;
 
@@ -475,6 +577,9 @@ void detectCpu(boost::asio::steady_timer& pingTimer,
     {
         if (config.state == State::READY)
         {
+            // at least one CPU is found, use slowPing since other cpu may not
+            // be present
+            pingSeconds = slowPingSeconds;
             continue;
         }
 
@@ -517,7 +622,7 @@ void detectCpu(boost::asio::steady_timer& pingTimer,
             continue;
         }
 
-        std::string peciDevPath = peciDev + std::to_string(config.bus);
+        std::string peciDevPath = peciDev + config.busName;
 
         peci_SetDevName(peciDevPath.data());
 
@@ -527,8 +632,9 @@ void detectCpu(boost::asio::steady_timer& pingTimer,
         {
             std::cerr << "unable to open " << peciDevPath << " "
                       << std::strerror(errno) << "\n";
-            detectCpuAsync(pingTimer, creationTimer, io, objectServer,
-                           dbusConnection, cpuConfigs, sensorConfigs);
+            detectCpuAsync(pingTimer, slowPingSeconds, creationTimer, io,
+                           objectServer, dbusConnection, cpuConfigs,
+                           sensorConfigs);
             return;
         }
 
@@ -559,6 +665,8 @@ void detectCpu(boost::asio::steady_timer& pingTimer,
                 }
                 else
                 {
+                    /* ping passed, read dimm temp failed*/
+                    pingSeconds = slowPingSeconds;
                     break;
                 }
             }
@@ -589,11 +697,14 @@ void detectCpu(boost::asio::steady_timer& pingTimer,
                         std::cout << config.name << " is detected\n";
                         if (!exportDevice(config))
                         {
+                            pingSeconds = failPingSeconds;
                             newState = State::OFF;
                         }
                     }
                     else
                     {
+                        /*ping passed, get CPUID failed*/
+                        pingSeconds = slowPingSeconds;
                         newState = State::OFF;
                     }
                 }
@@ -638,27 +749,28 @@ void detectCpu(boost::asio::steady_timer& pingTimer,
                                sensorConfigs) ||
                 keepPinging)
             {
-                detectCpuAsync(pingTimer, creationTimer, io, objectServer,
-                               dbusConnection, cpuConfigs, sensorConfigs);
+                detectCpuAsync(pingTimer, slowPingSeconds, creationTimer, io,
+                               objectServer, dbusConnection, cpuConfigs,
+                               sensorConfigs);
             }
         });
     }
     else if (keepPinging)
     {
-        detectCpuAsync(pingTimer, creationTimer, io, objectServer,
+        detectCpuAsync(pingTimer, pingSeconds, creationTimer, io, objectServer,
                        dbusConnection, cpuConfigs, sensorConfigs);
     }
 }
 
 void detectCpuAsync(
-    boost::asio::steady_timer& pingTimer,
+    boost::asio::steady_timer& pingTimer, const size_t pingSeconds,
     boost::asio::steady_timer& creationTimer, boost::asio::io_context& io,
     sdbusplus::asio::object_server& objectServer,
     std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
     boost::container::flat_set<CPUConfig>& cpuConfigs,
     ManagedObjectType& sensorConfigs)
 {
-    pingTimer.expires_after(std::chrono::seconds(1));
+    pingTimer.expires_after(std::chrono::seconds(pingSeconds));
     pingTimer.async_wait([&](const boost::system::error_code& ec) {
         if (ec == boost::asio::error::operation_aborted)
         {
@@ -668,11 +780,116 @@ void detectCpuAsync(
         detectCpu(pingTimer, creationTimer, io, objectServer, dbusConnection,
                   cpuConfigs, sensorConfigs);
     });
+    if (debug)
+    {
+        std::cerr << "detectCpu in " << pingSeconds << " seconds.\n";
+    }
+}
+std::optional<uint64_t> getPeciDeviceNum(const fs::path& peciAdapterNamePath)
+{
+    fs::path::iterator it = peciAdapterNamePath.begin();
+    std::advance(it, 5); // /sys/bus/peci/devices/peci-xxxx
+    std::string peciDeviceName = *it;
+    auto pos = peciDeviceName.find('-');
+    if (pos == std::string::npos)
+    {
+        std::cerr << "Incorrect PECI device name: " << peciDeviceName << "\n";
+        return std::nullopt;
+    }
+
+    try
+    {
+        return std::stoull(peciDeviceName.substr(pos + 1, 1));
+    }
+    catch (std::logic_error&)
+    {
+        return std::nullopt;
+    }
 }
 
-bool getCpuConfig(const std::shared_ptr<sdbusplus::asio::connection>& systemBus,
+std::optional<std::string>
+    readPeciAdapterNameFromFile(const fs::path& peciAdapterNamePath)
+{
+    std::ifstream nameFile(peciAdapterNamePath);
+    if (!nameFile.good())
+    {
+        std::cerr << "Cannot read: " << peciAdapterNamePath << "\n";
+        return std::nullopt;
+    }
+
+    std::string peciAdapterName;
+    std::getline(nameFile, peciAdapterName);
+    nameFile.close();
+    if (peciAdapterName.empty())
+    {
+        return std::nullopt;
+    }
+
+    auto pos = peciAdapterName.find('-');
+    peciAdapterName = peciAdapterName.substr(pos + 1);
+
+    return peciAdapterName;
+}
+
+void addConfigsForOtherPeciAdapters(
+    boost::container::flat_set<CPUConfig>& cpuConfigs, uint64_t& bus,
+    uint64_t& addr, std::string& name, const State& state)
+{
+    std::vector<fs::path> peciAdapterNamePaths;
+    if (!findFiles(fs::path(peciDevPath), R"(peci-\d+/name$)",
+                   peciAdapterNamePaths, 1))
+    {
+        std::cerr << "No PECI adapters in system\n";
+        return;
+    }
+
+    for (const fs::path& peciAdapterNamePath : peciAdapterNamePaths)
+    {
+        std::optional<uint64_t> peciDeviceNum =
+            getPeciDeviceNum(peciAdapterNamePath);
+        if (!peciDeviceNum || peciDeviceNum == bus)
+        {
+            continue;
+        }
+
+        std::optional<std::string> peciAdapterName =
+            readPeciAdapterNameFromFile(peciAdapterNamePath);
+        if (!peciAdapterName)
+        {
+            continue;
+        }
+
+        // Change result for peci-aspeed
+        if (peciAdapterName->compare("bus") == 0)
+        {
+            peciAdapterName = "wire";
+        }
+        if (peciAdapterName->compare("i3c") == 0)
+        {
+            std::string p = peciAdapterNamePath.string();
+            auto pos = p.find("peci-");
+            std::string pecidev = p.substr(pos, 6);
+            int cpu = peci_i3c_chardev_to_cpu(pecidev.c_str());
+
+            if (int(addr) != cpu + 0x30)
+            {
+                continue;
+            }
+        }
+
+        // WA:detectCpu uses cpuConfigs to send ping command
+        // peci-mctp does not support ping command,
+        // detectCPU will be refactored to support peci-mctp
+        if (peciAdapterName->compare("mctp") != 0)
+            cpuConfigs.emplace(*peciDeviceNum, addr,
+                               name + "_" + *peciAdapterName, *peciAdapterName,
+                               state);
+    }
+}
+
+bool getCpuConfig(std::shared_ptr<sdbusplus::asio::connection>& systemBus,
                   boost::container::flat_set<CPUConfig>& cpuConfigs,
-                  ManagedObjectType& sensorConfigs,
+                  ManagedObjectType& sensorConfigs, boost::asio::io_context& io,
                   sdbusplus::asio::object_server& objectServer)
 {
     bool useCache = false;
@@ -731,8 +948,46 @@ bool getCpuConfig(const std::shared_ptr<sdbusplus::asio::connection>& systemBus,
                     iface->register_property("Present", *present);
                     iface->initialize();
                     inventoryIfaces[name] = std::move(iface);
-                }
+                    if (*present)
+                    {
+                        // create required CPU sensors here in unavailable state
+                        auto findRequiredTempSensor =
+                            cfg.find("RequiredTempSensor");
+                        auto findCpuId = cfg.find("CpuID");
+                        if (findRequiredTempSensor != cfg.end() &&
+                            findCpuId != cfg.end())
+                        {
+                            std::string label =
+                                std::visit(VariantToStringVisitor(),
+                                           findRequiredTempSensor->second);
+                            // for temp sensor hwmon sysfs use input
+                            std::string item{"input"};
+                            int cpuId =
+                                std::visit(VariantToUnsignedIntVisitor(),
+                                           findCpuId->second);
+                            std::string requiredSensorName =
+                                createSensorName(label, item, cpuId);
 
+                            auto& sensorPtr = gCpuSensors[requiredSensorName];
+                            if (sensorPtr == nullptr)
+                            {
+                                // created a dummy sensor for required sensor,
+                                // will be replaced with a real one if it is
+                                // detected
+                                std::string objectType{};
+                                std::vector<thresholds::Threshold>
+                                    emptyThreshold{};
+                                std::string emptyConfig{};
+                                sensorPtr = std::make_unique<IntelCPUSensor>(
+                                    objectType, objectServer, systemBus, io,
+                                    requiredSensorName,
+                                    std::move(emptyThreshold), emptyConfig);
+                                std::cout << "created required CPU sensor "
+                                          << requiredSensorName << "\n";
+                            }
+                        }
+                    }
+                }
                 auto findBus = cfg.find("Bus");
                 if (findBus == cfg.end())
                 {
@@ -760,7 +1015,9 @@ bool getCpuConfig(const std::shared_ptr<sdbusplus::asio::connection>& systemBus,
                     std::cout << "type: " << type << "\n";
                 }
 
-                cpuConfigs.emplace(bus, addr, name, State::OFF);
+                cpuConfigs.emplace(bus, addr, name, "default", State::OFF);
+                addConfigsForOtherPeciAdapters(cpuConfigs, bus, addr, name,
+                                               State::OFF);
             }
         }
     }
@@ -775,6 +1032,111 @@ bool getCpuConfig(const std::shared_ptr<sdbusplus::asio::connection>& systemBus,
     return false;
 }
 
+void udevAction(udev_device* dev,
+                boost::container::flat_set<CPUConfig>& cpuConfigs)
+{
+    std::string action = udev_device_get_action(dev);
+    if (action.empty())
+    {
+        return;
+    }
+
+    std::string devpath = udev_device_get_devpath(dev);
+
+    auto pos = devpath.find("peci-");
+    std::string pecidevName = devpath.substr(pos);
+
+    pos = pecidevName.find("/");
+    std::string peciAdapterName = pecidevName.substr(5, pos - 5);
+    pecidevName = pecidevName.substr(pos + 1);
+
+    pos = pecidevName.find("/");
+    if (pos != std::string::npos)
+    {
+        return; // skip peci-client paths
+    }
+
+    pos = pecidevName.find("-");
+    int bus = std::stoi(pecidevName.substr(pos + 1));
+
+    pos = peciAdapterName.find(".");
+    if (pos != std::string::npos)
+    {
+        peciAdapterName = peciAdapterName.substr(0, pos);
+    }
+
+    if (action.compare("add") == 0)
+    {
+        for (CPUConfig& config : cpuConfigs)
+        {
+            if (config.bus != 0)
+            {
+                continue;
+            }
+
+            if (peciAdapterName.compare("i3c") == 0)
+            {
+                int cpu = peci_i3c_chardev_to_cpu(pecidevName.c_str());
+
+                if (int(config.addr) != cpu + 0x30)
+                {
+                    continue;
+                }
+            }
+            cpuConfigs.emplace(bus, config.addr,
+                               config.name + "_" + peciAdapterName,
+                               peciAdapterName, State::OFF);
+        }
+    }
+    else if (action.compare("remove") == 0)
+    {
+        for (CPUConfig& config : cpuConfigs)
+        {
+            if (config.bus == bus)
+            {
+                cpuConfigs.erase(config);
+            }
+        }
+    }
+}
+void udevAsync(boost::asio::posix::stream_descriptor& udevDescriptor,
+               udev_monitor* umonitor,
+               boost::container::flat_set<CPUConfig>& cpuConfigs)
+{
+    udevDescriptor.async_wait(
+        boost::asio::posix::stream_descriptor::wait_read,
+        [&udevDescriptor, umonitor,
+         &cpuConfigs](const boost::system::error_code& ec) {
+            if (ec)
+            {
+                if (ec == boost::asio::error::operation_aborted)
+                {
+                    return;
+                }
+
+                std::cerr << "error reading uevents: " << ec.message().c_str()
+                          << "\n";
+
+                udevAsync(udevDescriptor, umonitor, cpuConfigs);
+                return;
+            }
+
+            udev_device* dev = udev_monitor_receive_device(umonitor);
+            if (dev)
+            {
+                udevAction(dev, cpuConfigs);
+                udev_device_unref(dev);
+            }
+            else
+            {
+                std::cerr << "udevmonitor get device failed: "
+                          << ec.message().c_str() << "\n";
+            }
+
+            udevAsync(udevDescriptor, umonitor, cpuConfigs);
+        });
+}
+
 int main()
 {
     boost::asio::io_context io;
@@ -786,7 +1148,12 @@ int main()
     boost::asio::steady_timer pingTimer(io);
     boost::asio::steady_timer creationTimer(io);
     boost::asio::steady_timer filterTimer(io);
+    waitTimer = std::make_unique<boost::asio::steady_timer>(io);
     ManagedObjectType sensorConfigs;
+
+    udev* udevContext;
+    udev_monitor* umonitor;
+    boost::asio::posix::stream_descriptor udevDescriptor(io);
 
     filterTimer.expires_after(std::chrono::seconds(1));
     filterTimer.async_wait([&](const boost::system::error_code& ec) {
@@ -795,10 +1162,11 @@ int main()
             return; // we're being canceled
         }
 
-        if (getCpuConfig(systemBus, cpuConfigs, sensorConfigs, objectServer))
+        if (getCpuConfig(systemBus, cpuConfigs, sensorConfigs, io,
+                         objectServer))
         {
-            detectCpuAsync(pingTimer, creationTimer, io, objectServer,
-                           systemBus, cpuConfigs, sensorConfigs);
+            detectCpuAsync(pingTimer, fastPingSeconds, creationTimer, io,
+                           objectServer, systemBus, cpuConfigs, sensorConfigs);
         }
     });
 
@@ -823,14 +1191,31 @@ int main()
                 return; // we're being canceled
             }
 
-            if (getCpuConfig(systemBus, cpuConfigs, sensorConfigs,
+            if (getCpuConfig(systemBus, cpuConfigs, sensorConfigs, io,
                              objectServer))
             {
-                detectCpuAsync(pingTimer, creationTimer, io, objectServer,
-                               systemBus, cpuConfigs, sensorConfigs);
+                detectCpuAsync(pingTimer, fastPingSeconds, creationTimer, io,
+                               objectServer, systemBus, cpuConfigs,
+                               sensorConfigs);
             }
         });
     };
+
+    udevContext = udev_new();
+    if (!udevContext)
+    {
+        std::cerr << "can't create udev library context\n";
+    }
+    umonitor = udev_monitor_new_from_netlink(udevContext, "udev");
+    if (!umonitor)
+    {
+        std::cerr << "can't create udev monitor\n";
+    }
+    udev_monitor_filter_add_match_subsystem_devtype(umonitor, "peci", NULL);
+    udev_monitor_enable_receiving(umonitor);
+
+    udevDescriptor.assign(udev_monitor_get_fd(umonitor));
+    udevAsync(udevDescriptor, umonitor, cpuConfigs);
 
     std::vector<std::unique_ptr<sdbusplus::bus::match_t>> matches =
         setupPropertiesChangedMatches(*systemBus, sensorTypes, eventHandler);
@@ -838,6 +1223,8 @@ int main()
     systemBus->request_name("xyz.openbmc_project.IntelCPUSensor");
 
     setupManufacturingModeMatch(*systemBus);
+    boost::asio::spawn(
+        io, [](boost::asio::yield_context yield) { pollCPUSensors(yield); });
     io.run();
     return 0;
 }

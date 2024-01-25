@@ -1,0 +1,13 @@
+[Unit]
+Description=Digital discrete sensor
+StopWhenUnneeded=false
+Requires=xyz.openbmc_project.EntityManager.service
+After=xyz.openbmc_project.EntityManager.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/digitaldiscrete
+
+[Install]
+WantedBy=multi-user.target

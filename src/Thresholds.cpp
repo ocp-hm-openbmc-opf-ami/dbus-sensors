@@ -46,10 +46,48 @@ Direction findThresholdDirection(const std::string& direct)
     return Direction::ERROR;
 }
 
+static const std::unordered_map<std::string, std::string> labelToHwmonSuffix = {
+    {"iout_oc_warn_limit", "max"},
+};
+
+static std::optional<double>
+    parseThresholdFromLabel(const std::string* sensorPathStr,
+                            const SensorBaseConfigMap& sensorData)
+{
+    if (sensorPathStr == nullptr)
+    {
+        return std::nullopt;
+    }
+    auto thresholdLabelFind = sensorData.find("ThresholdLabel");
+    auto scaleFactorFind = sensorData.find("ScaleFactor");
+    if (thresholdLabelFind == sensorData.end() ||
+        scaleFactorFind == sensorData.end())
+    {
+        return std::nullopt;
+    }
+    auto hwmonFileSuffix = labelToHwmonSuffix.find(
+        std::visit(VariantToStringVisitor(), thresholdLabelFind->second));
+    if (hwmonFileSuffix == labelToHwmonSuffix.end())
+    {
+        return std::nullopt;
+    }
+    auto fileParts = splitFileName(*sensorPathStr);
+    if (!fileParts.has_value())
+    {
+        return std::nullopt;
+    }
+    auto& [type, nr, item] = fileParts.value();
+    auto attrPath =
+        boost::replace_all_copy(*sensorPathStr, item, hwmonFileSuffix->second);
+    return readFile(attrPath, (1.0 / std::visit(VariantToDoubleVisitor(),
+                                                scaleFactorFind->second)));
+}
+
 bool parseThresholdsFromConfig(
     const SensorData& sensorData,
     std::vector<thresholds::Threshold>& thresholdVector,
-    const std::string* matchLabel, const int* sensorIndex)
+    const std::string* matchLabel, const int* sensorIndex,
+    const std::string* sensorPathStr)
 {
     for (const auto& [intf, cfg] : sensorData)
     {
@@ -97,11 +135,9 @@ bool parseThresholdsFromConfig(
                                     hysteresisFind->second);
         }
 
-        auto directionFind = cfg.find("Direction");
         auto severityFind = cfg.find("Severity");
-        auto valueFind = cfg.find("Value");
-        if (valueFind == cfg.end() || severityFind == cfg.end() ||
-            directionFind == cfg.end())
+        auto directionFind = cfg.find("Direction");
+        if (severityFind == cfg.end() || directionFind == cfg.end())
         {
             std::cerr << "Malformed threshold on configuration interface "
                       << intf << "\n";
@@ -120,7 +156,24 @@ bool parseThresholdsFromConfig(
         {
             continue;
         }
-        double val = std::visit(VariantToDoubleVisitor(), valueFind->second);
+        double val = 0;
+        auto valueFind = cfg.find("Value");
+        auto labelValueOption = parseThresholdFromLabel(sensorPathStr, cfg);
+        if (labelValueOption.has_value())
+        {
+            val = labelValueOption.value();
+        }
+        else if (valueFind != cfg.end())
+        {
+            val = std::visit(VariantToDoubleVisitor(), valueFind->second);
+        }
+        else
+        {
+            std::cerr << "Failed to parse threshold value configuration for "
+                         "interface "
+                      << intf << "\n";
+            return false;
+        }
 
         thresholdVector.emplace_back(level, direction, val, hysteresis);
     }
@@ -380,10 +433,19 @@ bool checkThresholds(Sensor* sensor)
 {
     bool status = true;
     std::vector<ChangeParam> changes = checkThresholds(sensor, sensor->value);
+    // Sensor can be reconstructed when sensor configuration changes
+    // like a new threshold value. Threshold deassert can be missed
+    // if the new threshold value fixes the alarm because
+    // default state for new threshold interface is de-asserted.
+    // force sending assert/de-assert message when a not NaN value is updated
+    // for the first time even when threshold property did not change.
+    bool forceAssert = !sensor->hadValidValue;
+
     for (const auto& change : changes)
     {
         assertThresholds(sensor, change.assertValue, change.threshold.level,
-                         change.threshold.direction, change.asserted);
+                         change.threshold.direction, change.asserted,
+                         forceAssert);
         if (change.threshold.level == thresholds::Level::CRITICAL &&
             change.asserted)
         {
@@ -405,6 +467,7 @@ void checkThresholdsPowerDelay(const std::weak_ptr<Sensor>& weakSensor,
 
     Sensor* sensor = sensorPtr.get();
     std::vector<ChangeParam> changes = checkThresholds(sensor, sensor->value);
+    bool forceAssert = !sensor->hadValidValue;
     for (const auto& change : changes)
     {
         // When CPU is powered off, some volatges are expected to
@@ -429,13 +492,14 @@ void checkThresholdsPowerDelay(const std::weak_ptr<Sensor>& weakSensor,
             }
         }
         assertThresholds(sensor, change.assertValue, change.threshold.level,
-                         change.threshold.direction, change.asserted);
+                         change.threshold.direction, change.asserted,
+                         forceAssert);
     }
 }
 
 void assertThresholds(Sensor* sensor, double assertValue,
                       thresholds::Level level, thresholds::Direction direction,
-                      bool assert)
+                      bool assert, bool force)
 {
     std::shared_ptr<sdbusplus::asio::dbus_interface> interface =
         sensor->getThresholdInterface(level);
@@ -452,7 +516,9 @@ void assertThresholds(Sensor* sensor, double assertValue,
         std::cout << "Alarm property is empty \n";
         return;
     }
-    if (interface->set_property<bool, true>(property, assert))
+    bool propertyChanged =
+        interface->set_property<bool, true>(property, assert);
+    if (force || propertyChanged)
     {
         try
         {
@@ -508,14 +574,17 @@ bool parseThresholdsFromAttr(
                 const auto& [suffix, level, direction, offset] = t;
                 auto attrPath = boost::replace_all_copy(inputPath, item,
                                                         suffix);
-                if (auto val = readFile(attrPath, scaleFactor))
+                // create threshold with value NaN if file exists
+                // read can fail because resource is busy
+                // This allows thresholds interfaces created during init
+                // values will be updated when resource is available later.
+                if (auto val = readFile(attrPath, scaleFactor, true))
                 {
                     *val += offset;
-                    if (debug)
-                    {
-                        std::cout << "Threshold: " << attrPath << ": " << *val
-                                  << "\n";
-                    }
+
+                    std::cout << "Threshold: " << attrPath << ": " << *val
+                              << "\n";
+
                     thresholdVector.emplace_back(level, direction, *val, 0);
                 }
             }

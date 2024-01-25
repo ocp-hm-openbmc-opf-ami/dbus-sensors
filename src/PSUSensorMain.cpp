@@ -267,6 +267,12 @@ static void
                    sdbusplus::asio::object_server& objectServer,
                    const std::string& psuName)
 {
+    auto findPWMSensor = pwmSensors.find(psuName + labelHead);
+    if (findPWMSensor != pwmSensors.end())
+    {
+        return;
+    }
+
     for (const auto& [pwmLabel, pwmName] : pwmTable)
     {
         if (pwmLabel != labelHead)
@@ -274,20 +280,11 @@ static void
             continue;
         }
 
-        const std::string& sensorPathStr = sensorPath.string();
-        const std::string& pwmPathStr =
-            boost::replace_all_copy(sensorPathStr, "input", "target");
-        std::ifstream pwmFile(pwmPathStr);
-        if (!pwmFile.good())
-        {
-            continue;
-        }
+        const std::string pwmPathStr =
+            fs::canonical(sensorPath).parent_path().string() + "/" +
+            boost::replace_all_copy(pwmLabel, "fan", "pwm");
 
-        auto findPWMSensor = pwmSensors.find(psuName + labelHead);
-        if (findPWMSensor != pwmSensors.end())
-        {
-            continue;
-        }
+        std::ifstream pwmFile(pwmPathStr);
 
         std::string name = "Pwm_";
         name += psuName;
@@ -298,8 +295,23 @@ static void
         objPath += "_";
         objPath += pwmName;
 
-        pwmSensors[psuName + labelHead] = std::make_unique<PwmSensor>(
-            name, pwmPathStr, dbusConnection, objectServer, objPath, "PSU");
+        if (pwmFile.good())
+        {
+            pwmSensors[psuName + labelHead] = std::make_unique<PwmSensor>(
+                name, pwmPathStr, dbusConnection, objectServer, objPath, "PSU");
+            continue;
+        }
+
+        const std::string& sensorPathStr = sensorPath.string();
+        const std::string& rpmPathStr =
+            boost::replace_all_copy(sensorPathStr, "input", "target");
+        std::ifstream rpmFile(rpmPathStr);
+        if (rpmFile.good())
+        {
+            pwmSensors[psuName + labelHead] = std::make_unique<PwmSensor>(
+                name, rpmPathStr, dbusConnection, objectServer, objPath, "PSU");
+            continue;
+        }
     }
 }
 
@@ -853,7 +865,11 @@ static void createSensorsCallback(
 
             if (devType == DevTypes::HWMON)
             {
-                checkEventLimits(sensorPathStr, limitEventMatch, eventPathList);
+                if (sensorType == "pmbus")
+                {
+                    checkEventLimits(sensorPathStr, limitEventMatch,
+                                     eventPathList);
+                }
             }
 
             // Similarly, if sensor scaling factor is being customized,
@@ -889,7 +905,7 @@ static void createSensorsCallback(
 
             std::vector<thresholds::Threshold> sensorThresholds;
             if (!parseThresholdsFromConfig(*sensorData, sensorThresholds,
-                                           &labelHead))
+                                           &labelHead, nullptr, &sensorPathStr))
             {
                 std::cerr << "error populating thresholds for "
                           << sensorNameSubStr << "\n";
