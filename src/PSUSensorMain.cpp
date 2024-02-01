@@ -863,14 +863,11 @@ static void createSensorsCallback(
                 }
             }
 
-            if (devType == DevTypes::HWMON)
-            {
                 if (sensorType == "pmbus")
                 {
                     checkEventLimits(sensorPathStr, limitEventMatch,
                                      eventPathList);
                 }
-            }
 
             // Similarly, if sensor scaling factor is being customized,
             // then the below power-of-10 constraint becomes unnecessary,

@@ -562,6 +562,10 @@ bool parseThresholdsFromAttr(
                  std::make_tuple("crit", Level::CRITICAL, Direction::HIGH,
                                  offset),
              }},
+             {"cap",
+             {
+                 std::make_tuple("cap_max", Level::WARNING, Direction::HIGH, 0.0),
+             }},
         };
 
     if (auto fileParts = splitFileName(inputPath))

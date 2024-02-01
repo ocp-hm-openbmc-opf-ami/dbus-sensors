@@ -114,7 +114,7 @@ static constexpr auto hiddenProps{std::to_array<const char*>(
 static const boost::container::flat_map<std::string, SensorProperties>
     sensorPropertiesMap = {
         {"power",
-         {"/xyz/openbmc_project/sensors/power/", sensor_paths::unitWatts, 511,
+         {"/xyz/openbmc_project/sensors/power/", sensor_paths::unitWatts, 4500,
           0, 1000}},
         {"energy",
          {"/xyz/openbmc_project/sensors/energy/", sensor_paths::unitJoules,
