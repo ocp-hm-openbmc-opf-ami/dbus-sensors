@@ -36,7 +36,6 @@ DigitalDiscrete::~DigitalDiscrete()
 
 void DigitalDiscrete::setupRead(void)
 {
-
     deviceFunction = {
         {static_cast<unsigned int>(DigitalType::State),
          [this]() { monitorState(); }},
@@ -61,7 +60,6 @@ void DigitalDiscrete::setupRead(void)
 
 void DigitalDiscrete::monitorState(void)
 {
-
     // write sensor specific code
     auto powerStatusMatcherCallback = [this](sdbusplus::message_t& msg) {
         std::cerr << "power state changed\n";
@@ -99,8 +97,8 @@ void DigitalDiscrete::monitorState(void)
         }
     };
 
-    powerMonitor =
-        setupDbusMatch(powerPath, powerInterface, powerStatusMatcherCallback);
+    powerMonitor = setupDbusMatch(powerPath, powerInterface,
+                                  powerStatusMatcherCallback);
 }
 
 void DigitalDiscrete::monitorFailure(void)

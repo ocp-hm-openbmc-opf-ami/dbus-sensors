@@ -16,7 +16,6 @@ ACPISystemStatus::ACPISystemStatus(
     Discrete(escapeName(sensorName), sensorConfiguration, conn),
     objServer(objectServer), conn(conn)
 {
-
     sensorInterface = objectServer.add_interface(
         "/xyz/openbmc_project/sensors/acpisystem/" + name,
         "xyz.openbmc_project.Sensor.State");
@@ -42,8 +41,8 @@ void ACPISystemStatus::propertyInitialize(
     std::vector<std::string> logData(logDataMaxSize);
 
     reading = reading | (1 << static_cast<uint16_t>(ACPI::LEGACY_OFF));
-    const std::string objPath =
-        "/xyz/openbmc_project/sensors/acpisystem/" + name;
+    const std::string objPath = "/xyz/openbmc_project/sensors/acpisystem/" +
+                                name;
     logData[0] = name;
     logData[1] = "LEGACY_OFF";
     logData[2] = objPath;
@@ -76,7 +75,6 @@ void ACPISystemStatus::propertyInitialize(
 void ACPISystemStatus::monitorState(
     std::shared_ptr<sdbusplus::asio::connection>& conn)
 {
-
     propertyInitialize(conn);
 
     auto powerStatusMatcherCallback = [this, &conn](sdbusplus::message_t& msg) {
@@ -86,8 +84,8 @@ void ACPISystemStatus::monitorState(
             values;
         uint16_t oldValue = reading;
         reading = 0;
-        const std::string objPath =
-            "/xyz/openbmc_project/sensors/acpisystem/" + name;
+        const std::string objPath = "/xyz/openbmc_project/sensors/acpisystem/" +
+                                    name;
         std::vector<uint8_t> eventData(selEvtDataMaxSize, 0xFF);
         std::vector<std::string> logData(logDataMaxSize);
         reading = reading | (1 << static_cast<uint16_t>(ACPI::LEGACY_OFF));
@@ -121,7 +119,6 @@ void ACPISystemStatus::monitorState(
             }
             if (oldValue != reading)
             {
-
                 logData[0] = name;
                 logData[2] = objPath;
                 logData[3] = "SensorSystemACPIPowerState";

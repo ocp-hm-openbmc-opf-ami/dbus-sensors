@@ -40,9 +40,9 @@ enum class IPMIThresholds
 
 enum class HostState
 {
-     Running,
-     Off,
-     Unknown,
+    Running,
+    Off,
+    Unknown,
 };
 
 struct Discrete
@@ -89,8 +89,8 @@ struct Discrete
         sensorInterface->register_property(
             "State", state,
             [this](const uint16_t& newState, uint16_t& oldState) {
-                return setSensorState(newState, oldState);
-            });
+            return setSensorState(newState, oldState);
+        });
 
         if (!sensorInterface->initialize())
         {
@@ -110,45 +110,44 @@ struct Discrete
             std::move(statusCallback));
     }
 
-uint8_t getHostStatus(std::shared_ptr<sdbusplus::asio::connection> conn)
-{
-    std::string pwrStatus;
-    value variant;
-    try
+    uint8_t getHostStatus(std::shared_ptr<sdbusplus::asio::connection> conn)
     {
-        auto method = conn->new_method_call(power::busname, power::path,
-                                            properties::interface,properties::get);
-        method.append(power::interface, "CurrentHostState");
-        auto reply = conn->call(method);
-        reply.read(variant);
-        pwrStatus = std::get<std::string>(variant);
+        std::string pwrStatus;
+        value variant;
+        try
+        {
+            auto method = conn->new_method_call(power::busname, power::path,
+                                                properties::interface,
+                                                properties::get);
+            method.append(power::interface, "CurrentHostState");
+            auto reply = conn->call(method);
+            reply.read(variant);
+            pwrStatus = std::get<std::string>(variant);
+        }
+        catch (sdbusplus::exception_t& e)
+        {
+            std::cerr << "Failed to get getHostStatus Value";
+            return (static_cast<uint8_t>(HostState::Unknown));
+        }
+        if (pwrStatus == "xyz.openbmc_project.State.Host.HostState.Running")
+        {
+            return (static_cast<uint8_t>(HostState::Running));
+        }
+        else if (pwrStatus == "xyz.openbmc_project.State.Host.HostState.Off")
+        {
+            return (static_cast<uint8_t>(HostState::Off));
+        }
+        return (static_cast<uint8_t>(HostState::Unknown));
     }
-    catch (sdbusplus::exception_t& e)
-    {
-
-        std::cerr<<"Failed to get getHostStatus Value";
-        return (static_cast<uint8_t>(HostState::Unknown)) ;
-    }
-    if (pwrStatus == "xyz.openbmc_project.State.Host.HostState.Running")
-    {
-            return (static_cast<uint8_t>(HostState::Running)) ;
-    }
-    else if (pwrStatus == "xyz.openbmc_project.State.Host.HostState.Off")
-    {
-            return (static_cast<uint8_t>(HostState::Off)) ;
-    }
-    return (static_cast<uint8_t>(HostState::Unknown)) ;
-}
-
 };
 
 inline std::string getService(const std::string& intf, const std::string& path)
 {
     auto bus = bus::new_default_system();
-    auto mapper =
-        bus.new_method_call("xyz.openbmc_project.ObjectMapper",
-                            "/xyz/openbmc_project/object_mapper",
-                            "xyz.openbmc_project.ObjectMapper", "GetObject");
+    auto mapper = bus.new_method_call("xyz.openbmc_project.ObjectMapper",
+                                      "/xyz/openbmc_project/object_mapper",
+                                      "xyz.openbmc_project.ObjectMapper",
+                                      "GetObject");
 
     mapper.append(path);
     mapper.append(std::vector<std::string>({intf}));
@@ -238,9 +237,8 @@ inline int8_t monitorThreshold(const std::string sensorName,
         {
             if (std::get<bool>(criticalMap.at("CriticalAlarmLow")))
             {
-                status =
-                    status |
-                    (1 << static_cast<int8_t>(IPMIThresholds::criticalLow));
+                status = status | (1 << static_cast<int8_t>(
+                                       IPMIThresholds::criticalLow));
             }
         }
     }

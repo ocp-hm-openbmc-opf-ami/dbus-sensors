@@ -17,7 +17,7 @@
 
 namespace fs = std::filesystem;
 
-enum class  CpuEvent : uint16_t
+enum class CpuEvent : uint16_t
 {
     PresenceDetected = 0x07,
 };

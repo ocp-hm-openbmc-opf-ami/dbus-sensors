@@ -26,12 +26,10 @@ void createSensors(
     const std::shared_ptr<boost::container::flat_set<std::string>>&
         sensorsChanged)
 {
-    auto getter = std::make_shared<
-        GetSensorConfiguration>(dbusConnection, [&io, &objectServer, &sensors,
-                                                 &dbusConnection,
-                                                 sensorsChanged](
-                                                    const ManagedObjectType&
-                                                        sensorConfigs) {
+    auto getter = std::make_shared<GetSensorConfiguration>(
+        dbusConnection,
+        [&io, &objectServer, &sensors, &dbusConnection,
+         sensorsChanged](const ManagedObjectType& sensorConfigs) {
         bool firstScan = sensorsChanged == nullptr;
         std::vector<fs::path> pmbusPaths;
         if (!findFiles(fs::path("/sys/class/hwmon"), "name", pmbusPaths))
@@ -42,7 +40,6 @@ void createSensors(
         boost::container::flat_set<std::string> directories;
         for (const auto& pmbusPath : pmbusPaths)
         {
-
             std::ifstream nameFile(pmbusPath);
             if (!nameFile.good())
             {
@@ -84,7 +81,6 @@ void createSensors(
 
             try
             {
-
                 bus = std::stoi(busStr);
                 addr = std::stoi(addrStr, nullptr, 16);
             }
@@ -103,7 +99,6 @@ void createSensors(
                 sensorData = &cfgData;
                 for (const char* type : sensorTypes)
                 {
-
                     auto sensorBase =
                         sensorData->find(configInterfaceName(type));
                     if (sensorBase != sensorData->end())
@@ -213,30 +208,29 @@ int main()
     boost::asio::deadline_timer filterTimer(io);
     std::function<void(sdbusplus::message::message&)> eventHandler =
         [&](sdbusplus::message::message& message) {
-            if (message.is_method_error())
+        if (message.is_method_error())
+        {
+            std::cerr << "callback method error\n";
+            return;
+        }
+        sensorsChanged->insert(message.get_path());
+        // this implicitly cancels the timer
+        filterTimer.expires_from_now(boost::posix_time::seconds(5));
+
+        filterTimer.async_wait([&](const boost::system::error_code& ec) {
+            if (ec == boost::asio::error::operation_aborted)
             {
-                std::cerr << "callback method error\n";
+                /* we were canceled*/
                 return;
             }
-            sensorsChanged->insert(message.get_path());
-            // this implicitly cancels the timer
-            filterTimer.expires_from_now(boost::posix_time::seconds(5));
-
-            filterTimer.async_wait([&](const boost::system::error_code& ec) {
-                if (ec == boost::asio::error::operation_aborted)
-                {
-                    /* we were canceled*/
-                    return;
-                }
-                if (ec)
-                {
-                    std::cerr << "timer error\n";
-                    return;
-                }
-                createSensors(io, objectServer, sensors, systemBus,
-                              sensorsChanged);
-            });
-        };
+            if (ec)
+            {
+                std::cerr << "timer error\n";
+                return;
+            }
+            createSensors(io, objectServer, sensors, systemBus, sensorsChanged);
+        });
+    };
 
     std::vector<std::unique_ptr<sdbusplus::bus::match_t>> matches =
         setupPropertiesChangedMatches(*systemBus, sensorTypes, eventHandler);

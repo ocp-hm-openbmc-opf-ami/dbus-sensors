@@ -20,8 +20,8 @@ PowerUnit::PowerUnit(sdbusplus::asio::object_server& objectServer,
     sensorInterface = objectServer.add_interface(
         baseObj + name, "xyz.openbmc_project.Sensor.State");
 
-    association =
-        objectServer.add_interface(baseObj + name, association::interface);
+    association = objectServer.add_interface(baseObj + name,
+                                             association::interface);
     setInitialProperties();
 
     // write sensor specific code
@@ -58,8 +58,8 @@ PowerUnit::PowerUnit(sdbusplus::asio::object_server& objectServer,
         }
     };
 
-    powerMonitor =
-        setupDbusMatch(powerPath, powerInterface, powerStatusMatcherCallback);
+    powerMonitor = setupDbusMatch(powerPath, powerInterface,
+                                  powerStatusMatcherCallback);
 }
 
 PowerUnit::~PowerUnit()

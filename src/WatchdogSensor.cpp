@@ -19,19 +19,19 @@ WatchdogSensor::WatchdogSensor(
     Discrete(escapeName(sensorName), sensorConfiguration, conn),
     objServer(objectServer)
 {
-   sensorInterface = objectServer.add_interface(
+    sensorInterface = objectServer.add_interface(
         "/xyz/openbmc_project/sensors/watchdog/" + name,
         "xyz.openbmc_project.Sensor.State");
 
     association = objectServer.add_interface(
         "/xyz/openbmc_project/sensors/watchdog/" + name,
         association::interface);
-    std::cout<<"Calling setinitalprocperites\n";
+    std::cout << "Calling setinitalprocperites\n";
     setInitialProperties();
 
     const std::string objPath = "/xyz/openbmc_project/sensors/watchdog/" + name;
-    auto watchdogEventMatcherCallback = [this, &conn, objPath](
-                                            sdbusplus::message::message& msg) {
+    auto watchdogEventMatcherCallback =
+        [this, &conn, objPath](sdbusplus::message::message& msg) {
         std::optional<std::string_view> expireAction;
 
         // SEL event data is three bytes where 0xFF means
@@ -71,9 +71,9 @@ WatchdogSensor::WatchdogSensor(
         std::string action{*expireAction};
         uint16_t offset;
         auto findEvent = eventType.find(action.c_str());
-        if(findEvent != eventType.end())
+        if (findEvent != eventType.end())
         {
-            offset = static_cast<uint16_t> (findEvent->second);
+            offset = static_cast<uint16_t>(findEvent->second);
             updateState(sensorInterface, static_cast<uint16_t>(1 << offset));
             eventData[0] = static_cast<uint8_t>(offset);
         }

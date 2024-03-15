@@ -22,7 +22,6 @@ enum class watchdogEvents : uint8_t
     powerCycle = 0x03,
 };
 
-
 static constexpr size_t selEvtDataMaxSize = 3;
 
 namespace fs = std::filesystem;
@@ -42,7 +41,6 @@ const static boost::container::flat_map<const char*, watchdogEvents, CmpStr>
         {"PowerOff", watchdogEvents::powerDown},
         {"PowerCycle", watchdogEvents::powerCycle},
     }};
-
 
 class WatchdogSensor :
     public Discrete,

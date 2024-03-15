@@ -102,7 +102,7 @@ void createSensors(
 
             sensorConstruct->setupRead();
         }
-        });
+    });
 
     getter->getConfiguration(std::vector<std::string>{sensorType});
 }

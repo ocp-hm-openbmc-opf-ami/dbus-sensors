@@ -21,7 +21,6 @@ BatteryStatus::BatteryStatus(sdbusplus::asio::object_server& objectServer,
     Discrete(escapeName(sensorName), sensorConfiguration, conn),
     objServer(objectServer), waitTimer(io), deviceName(deviceName), conn(conn)
 {
-
     sensorInterface = objectServer.add_interface(
         "/xyz/openbmc_project/sensors/battery/" + name,
         "xyz.openbmc_project.Sensor.State");
@@ -39,13 +38,11 @@ BatteryStatus::~BatteryStatus()
 
 void BatteryStatus::setupRead(void)
 {
-
     monitorState();
 }
 
 void BatteryStatus::monitorState()
 {
-
     int8_t reading = monitorThreshold(deviceName, sensorObjectPath);
     uint16_t state = 0;
     if (reading != -1)
@@ -56,8 +53,8 @@ void BatteryStatus::monitorState()
         }
         if (reading & (1 << static_cast<int8_t>(IPMIThresholds::criticalLow)))
         {
-            state =
-                state | (1 << static_cast<uint16_t>(battery::batteryFailed));
+            state = state |
+                    (1 << static_cast<uint16_t>(battery::batteryFailed));
         }
         state = state | (1 << static_cast<uint16_t>(battery::batteryPresence));
     }

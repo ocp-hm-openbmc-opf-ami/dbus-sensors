@@ -89,7 +89,7 @@ void createSensors(
             sensorConstruct = std::make_shared<ACPISystemStatus>(
                 objectServer, dbusConnection, sensorName, *interfacePath);
         }
-        });
+    });
 
     getter->getConfiguration(std::vector<std::string>{sensorType});
 }

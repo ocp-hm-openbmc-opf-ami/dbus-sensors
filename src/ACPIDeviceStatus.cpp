@@ -23,7 +23,6 @@ ACPIDeviceStatus::ACPIDeviceStatus(
     objServer(objectServer), waitTimer(io), deviceName(deviceName),
     deviceBus(deviceBus), deviceAddress(deviceAddress), conn(conn)
 {
-
     sensorInterface = objectServer.add_interface(
         "/xyz/openbmc_project/sensors/acpidevice/" + name,
         "xyz.openbmc_project.Sensor.State");
@@ -42,7 +41,6 @@ ACPIDeviceStatus::~ACPIDeviceStatus()
 
 void ACPIDeviceStatus::setupRead(void)
 {
-
     deviceFunction = {
         {"PowerSupply", [this]() { psuMonitorState(); }},
     };
@@ -70,9 +68,8 @@ fs::path ACPIDeviceStatus::findFile(const fs::path& directory,
 
 void ACPIDeviceStatus::psuMonitorState()
 {
-
-    const std::string objPath =
-        "/xyz/openbmc_project/sensors/acpidevice/" + name;
+    const std::string objPath = "/xyz/openbmc_project/sensors/acpidevice/" +
+                                name;
     std::vector<std::string> logData(logDataMaxSize);
     std::vector<uint8_t> eventData(selEvtDataMaxSize, 0xFF);
     std::pair<uint8_t, bool> offsetAndEvent;
