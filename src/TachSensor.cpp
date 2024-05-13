@@ -16,24 +16,29 @@
 
 #include "TachSensor.hpp"
 
+#include "SensorPaths.hpp"
+#include "Thresholds.hpp"
 #include "Utils.hpp"
+#include "sensor.hpp"
 
-#include <unistd.h>
-
-#include <boost/asio/read_until.hpp>
+#include <boost/asio/buffer.hpp>
+#include <boost/asio/error.hpp>
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/posix/stream_descriptor.hpp>
+#include <boost/asio/random_access_file.hpp>
 #include <gpiod.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 
 #include <charconv>
-#include <fstream>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <iostream>
-#include <istream>
-#include <limits>
 #include <memory>
 #include <optional>
-#include <stdexcept>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -85,7 +90,7 @@ TachSensor::TachSensor(const std::string& path, const std::string& objectType,
         itemAssoc = objectServer.add_interface(
             "/xyz/openbmc_project/inventory/" + name, association::interface);
         itemAssoc->register_property(
-            "associations",
+            "Associations",
             std::vector<Association>{
                 {"sensors", "inventory",
                  "/xyz/openbmc_project/sensors/fan_tach/" + name}});
@@ -191,7 +196,7 @@ void TachSensor::handleResponse(const boost::system::error_code& err,
     restartRead(pollTime);
 }
 
-void TachSensor::checkThresholds(void)
+void TachSensor::checkThresholds()
 {
     // WA - treat value <= 0 as not present
     bool status = false;
@@ -259,7 +264,7 @@ PresenceSensor::~PresenceSensor()
     gpioLine.release();
 }
 
-void PresenceSensor::monitorPresence(void)
+void PresenceSensor::monitorPresence()
 {
     gpioFd.async_wait(boost::asio::posix::stream_descriptor::wait_read,
                       [this](const boost::system::error_code& ec) {
@@ -280,7 +285,7 @@ void PresenceSensor::monitorPresence(void)
     });
 }
 
-void PresenceSensor::read(void)
+void PresenceSensor::read()
 {
     gpioLine.event_read();
     status = (gpioLine.get_value() != 0);
@@ -295,7 +300,7 @@ void PresenceSensor::read(void)
     }
 }
 
-bool PresenceSensor::getValue(void) const
+bool PresenceSensor::getValue() const
 {
     return status;
 }

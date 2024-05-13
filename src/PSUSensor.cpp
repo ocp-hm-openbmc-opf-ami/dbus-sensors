@@ -16,19 +16,28 @@
 
 #include "PSUSensor.hpp"
 
-#include <unistd.h>
+#include "DeviceMgmt.hpp"
+#include "SensorPaths.hpp"
+#include "Thresholds.hpp"
+#include "Utils.hpp"
+#include "sensor.hpp"
 
+#include <boost/asio/buffer.hpp>
+#include <boost/asio/error.hpp>
+#include <boost/asio/io_context.hpp>
 #include <boost/asio/random_access_file.hpp>
-#include <boost/asio/read_until.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 
+#include <array>
+#include <chrono>
+#include <cstddef>
 #include <iostream>
-#include <istream>
 #include <limits>
 #include <memory>
+#include <stdexcept>
 #include <string>
-#include <system_error>
+#include <utility>
 #include <vector>
 
 static constexpr const char* sensorPathPrefix = "/xyz/openbmc_project/sensors/";
@@ -140,7 +149,7 @@ void PSUSensor::deactivate()
     path = "";
 }
 
-void PSUSensor::setupRead(void)
+void PSUSensor::setupRead()
 {
     if (!readingStateGood())
     {
@@ -175,7 +184,7 @@ void PSUSensor::setupRead(void)
     });
 }
 
-void PSUSensor::restartRead(void)
+void PSUSensor::restartRead()
 {
     std::weak_ptr<PSUSensor> weakRef = weak_from_this();
     waitTimer.expires_after(std::chrono::milliseconds(sensorPollMs));
@@ -243,7 +252,7 @@ void PSUSensor::handleResponse(const boost::system::error_code& err,
     restartRead();
 }
 
-void PSUSensor::checkThresholds(void)
+void PSUSensor::checkThresholds()
 {
     if (!readingStateGood())
     {

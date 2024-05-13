@@ -16,24 +16,37 @@
 
 #include "DeviceMgmt.hpp"
 #include "HwmonTempSensor.hpp"
+#include "SensorPaths.hpp"
+#include "Thresholds.hpp"
 #include "Utils.hpp"
 
-#include <boost/algorithm/string/replace.hpp>
+#include <boost/asio/error.hpp>
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/post.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/container/flat_map.hpp>
 #include <boost/container/flat_set.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
+#include <sdbusplus/bus.hpp>
 #include <sdbusplus/bus/match.hpp>
+#include <sdbusplus/message.hpp>
+#include <sdbusplus/message/native_types.hpp>
 
+#include <algorithm>
 #include <array>
-#include <charconv>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
-#include <fstream>
 #include <functional>
+#include <ios>
+#include <iostream>
 #include <memory>
+#include <optional>
 #include <regex>
-#include <stdexcept>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -69,6 +82,7 @@ static const I2CDeviceTypeMap sensorTypes{
     {"MCP9600", I2CDeviceType{"mcp9600", false}},
     {"NCT6779", I2CDeviceType{"nct6779", true}},
     {"NCT7802", I2CDeviceType{"nct7802", true}},
+    {"PT5161L", I2CDeviceType{"pt5161l", true}},
     {"SBTSI", I2CDeviceType{"sbtsi", true}},
     {"SI7020", I2CDeviceType{"si7020", false}},
     {"TMP100", I2CDeviceType{"tmp100", true}},
@@ -152,7 +166,7 @@ static struct SensorParams
         // Relative Humidity are read in milli-percent, we need percent.
         tmpSensorParameters.scaleValue *= 0.001;
         tmpSensorParameters.typeName = "humidity";
-        tmpSensorParameters.units = "PercentRH";
+        tmpSensorParameters.units = sensor_paths::unitPercentRH;
     }
     else
     {

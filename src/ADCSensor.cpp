@@ -16,20 +16,29 @@
 
 #include "ADCSensor.hpp"
 
-#include <unistd.h>
+#include "SensorPaths.hpp"
+#include "Thresholds.hpp"
+#include "Utils.hpp"
+#include "sensor.hpp"
 
+#include <fcntl.h>
+
+#include <boost/asio/error.hpp>
+#include <boost/asio/io_context.hpp>
 #include <boost/asio/read_until.hpp>
+#include <boost/asio/streambuf.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 
+#include <chrono>
 #include <cmath>
-#include <filesystem>
-#include <fstream>
+#include <cstddef>
 #include <iostream>
-#include <limits>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 // scaling factor from hwmon
@@ -94,7 +103,7 @@ ADCSensor::~ADCSensor()
     objServer.remove_interface(association);
 }
 
-void ADCSensor::setupRead(void)
+void ADCSensor::setupRead()
 {
     std::shared_ptr<boost::asio::streambuf> buffer =
         std::make_shared<boost::asio::streambuf>();
@@ -225,7 +234,7 @@ void ADCSensor::handleResponse(const boost::system::error_code& err)
     });
 }
 
-void ADCSensor::checkThresholds(void)
+void ADCSensor::checkThresholds()
 {
     if (!readingStateGood())
     {

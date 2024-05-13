@@ -16,22 +16,34 @@
 
 #include "IntelCPUSensor.hpp"
 
+#include "SensorPaths.hpp"
+#include "Thresholds.hpp"
 #include "Utils.hpp"
+#include "sensor.hpp"
 
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <boost/algorithm/string/replace.hpp>
-#include <boost/asio/read_until.hpp>
+#include <boost/asio/error.hpp>
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/posix/descriptor_base.hpp>
+#include <boost/container/flat_map.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 
+#include <algorithm>
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
+#include <functional>
 #include <iostream>
-#include <istream>
 #include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 IntelCPUSensor::IntelCPUSensor(
@@ -156,6 +168,26 @@ IntelCPUSensor::~IntelCPUSensor()
 }
 
 void IntelCPUSensor::setupRead(boost::asio::yield_context yield)
+void IntelCPUSensor::restartRead()
+{
+    std::weak_ptr<IntelCPUSensor> weakRef = weak_from_this();
+    waitTimer.expires_after(std::chrono::milliseconds(pollTime));
+    waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
+        if (ec == boost::asio::error::operation_aborted)
+        {
+            std::cerr << "Failed to reschedule\n";
+            return;
+        }
+        std::shared_ptr<IntelCPUSensor> self = weakRef.lock();
+
+        if (self)
+        {
+            self->setupRead();
+        }
+    });
+}
+
+void IntelCPUSensor::setupRead()
 {
     if (readingStateGood())
     {
@@ -193,7 +225,7 @@ void IntelCPUSensor::setupRead(boost::asio::yield_context yield)
     }
 }
 
-void IntelCPUSensor::updateMinMaxValues(void)
+void IntelCPUSensor::updateMinMaxValues()
 {
     double newMin = std::numeric_limits<double>::quiet_NaN();
     double newMax = std::numeric_limits<double>::quiet_NaN();
@@ -321,6 +353,10 @@ void IntelCPUSensor::handleResponse(const boost::system::error_code& err)
                 {
                     if (!std::equal(thresholds.begin(), thresholds.end(),
                                     newThresholds.begin(), newThresholds.end()))
+                    std::vector<thresholds::Threshold> newThresholds;
+                    if (parseThresholdsFromAttr(
+                            newThresholds, path,
+                            IntelCPUSensor::sensorScaleFactor, dtsOffset, 0))
                     {
                         if (!newThresholds.empty())
                         {
@@ -359,7 +395,7 @@ void IntelCPUSensor::handleResponse(const boost::system::error_code& err)
     }
 }
 
-void IntelCPUSensor::checkThresholds(void)
+void IntelCPUSensor::checkThresholds()
 {
     if (show)
     {

@@ -10,6 +10,9 @@
 #include <string>
 #include <vector>
 
+constexpr const char* sensorType = "IpmbSensor";
+constexpr const char* sdrInterface = "IpmbDevice";
+
 enum class IpmbType
 {
     none,
@@ -17,7 +20,8 @@ enum class IpmbType
     PXE1410CVR,
     IR38363VR,
     ADM1278HSC,
-    mpsVR
+    mpsVR,
+    SMPro
 };
 
 enum class IpmbSubType
@@ -34,9 +38,12 @@ enum class ReadingFormat
 {
     byte0,
     byte3,
+    nineBit,
+    tenBit,
     elevenBit,
     elevenBitShift,
-    linearElevenBit
+    linearElevenBit,
+    fifteenBit
 };
 
 namespace ipmi
@@ -136,13 +143,15 @@ struct IpmbSensor :
                std::string& sensorTypeName);
     ~IpmbSensor() override;
 
-    void checkThresholds(void) override;
-    void read(void);
-    void init(void);
-    std::string getSubTypeUnits(void) const;
-    void loadDefaults(void);
-    void runInitCmd(void);
-    bool processReading(const std::vector<uint8_t>& data, double& resp);
+    void checkThresholds() override;
+    void read();
+    void init();
+    std::string getSubTypeUnits() const;
+    void loadDefaults();
+    void runInitCmd();
+    static bool processReading(ReadingFormat readingFormat, uint8_t command,
+                               const std::vector<uint8_t>& data, double& resp,
+                               size_t errCount);
     void parseConfigValues(const SensorBaseConfigMap& entry);
     bool sensorClassType(const std::string& sensorClass);
     void sensorSubType(const std::string& sensorTypeName);
@@ -170,10 +179,21 @@ struct IpmbSensor :
     ReadingFormat readingFormat = ReadingFormat::byte0;
 
   private:
-    void sendIpmbRequest(void);
+    void sendIpmbRequest();
     sdbusplus::asio::object_server& objectServer;
     boost::asio::steady_timer waitTimer;
     void ipmbRequestCompletionCb(const boost::system::error_code& ec,
                                  const IpmbMethodType& response);
     void getMeCommand();
 };
+
+void createSensors(
+    boost::asio::io_context& io, sdbusplus::asio::object_server& objectServer,
+    boost::container::flat_map<std::string, std::shared_ptr<IpmbSensor>>&
+        sensors,
+    std::shared_ptr<sdbusplus::asio::connection>& dbusConnection);
+
+void interfaceRemoved(
+    sdbusplus::message_t& message,
+    boost::container::flat_map<std::string, std::shared_ptr<IpmbSensor>>&
+        sensors);

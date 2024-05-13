@@ -1,17 +1,25 @@
 #include "Thresholds.hpp"
 
+#include "Utils.hpp"
 #include "VariantVisitors.hpp"
 #include "sensor.hpp"
 
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/asio/error.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/container/flat_map.hpp>
+#include <sdbusplus/asio/connection.hpp>
+#include <sdbusplus/asio/object_server.hpp>
+#include <sdbusplus/exception.hpp>
+#include <sdbusplus/message.hpp>
 
 #include <array>
-#include <cmath>
-#include <fstream>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <iostream>
+#include <limits>
 #include <memory>
-#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -541,7 +549,7 @@ void assertThresholds(Sensor* sensor, double assertValue,
 bool parseThresholdsFromAttr(
     std::vector<thresholds::Threshold>& thresholdVector,
     const std::string& inputPath, const double& scaleFactor,
-    const double& offset)
+    const double& offset, const double& hysteresis)
 {
     const boost::container::flat_map<
         std::string, std::vector<std::tuple<const char*, thresholds::Level,
@@ -590,6 +598,13 @@ bool parseThresholdsFromAttr(
                               << "\n";
 
                     thresholdVector.emplace_back(level, direction, *val, 0);
+                    if (debug)
+                    {
+                        std::cout << "Threshold: " << attrPath << ": " << *val
+                                  << "\n";
+                    }
+                    thresholdVector.emplace_back(level, direction, *val,
+                                                 hysteresis);
                 }
             }
         }
