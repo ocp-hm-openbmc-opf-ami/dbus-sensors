@@ -348,12 +348,16 @@ bool createSensors(boost::asio::io_context& io,
             auto findSensor = gCpuSensors.find(sensorName);
             if (findSensor != gCpuSensors.end())
             {
-                if (debug)
-                {
-                    std::cout << "Will be replaced: " << inputPath << ": "
-                              << sensorName << " is already created\n";
-                }
-                continue;
+		if(label != "DTS")
+		{
+			if (debug)
+			{
+				std::cout << "Will be replaced: " << inputPath << ": "
+					<< sensorName << " is already created\n";
+			}
+
+			continue;
+		}
             }
 
             // check hidden properties
