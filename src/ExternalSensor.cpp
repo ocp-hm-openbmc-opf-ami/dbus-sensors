@@ -1,18 +1,22 @@
 #include "ExternalSensor.hpp"
 
 #include "SensorPaths.hpp"
-
-#include <unistd.h>
+#include "Thresholds.hpp"
+#include "Utils.hpp"
+#include "sensor.hpp"
 
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 
 #include <chrono>
+#include <cstddef>
+#include <functional>
 #include <iostream>
-#include <istream>
 #include <limits>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 static constexpr bool debug = false;
@@ -114,12 +118,12 @@ ExternalSensor::~ExternalSensor()
     }
 }
 
-void ExternalSensor::checkThresholds(void)
+void ExternalSensor::checkThresholds()
 {
     thresholds::checkThresholds(this);
 }
 
-bool ExternalSensor::isAliveAndPerishable(void) const
+bool ExternalSensor::isAliveAndPerishable() const
 {
     return (writeAlive && writePerishable);
 }
@@ -151,7 +155,7 @@ void ExternalSensor::writeBegin(
     writeAlive = true;
 }
 
-void ExternalSensor::writeInvalidate(void)
+void ExternalSensor::writeInvalidate()
 {
     writeAlive = false;
 
@@ -182,7 +186,7 @@ std::chrono::steady_clock::duration ExternalSensor::ageRemaining(
     return (writeTimeout - ageElapsed(now));
 }
 
-void ExternalSensor::externalSetTrigger(void)
+void ExternalSensor::externalSetTrigger()
 {
     if constexpr (debug)
     {

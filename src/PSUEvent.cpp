@@ -17,34 +17,35 @@
 #include "PSUEvent.hpp"
 
 #include "SensorPaths.hpp"
+#include "Utils.hpp"
 
+#include <boost/asio/buffer.hpp>
+#include <boost/asio/error.hpp>
 #include <boost/asio/io_context.hpp>
-#include <boost/asio/read_until.hpp>
+#include <boost/asio/random_access_file.hpp>
 #include <boost/container/flat_map.hpp>
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 
+#include <array>
+#include <chrono>
+#include <cstddef>
 #include <iostream>
 #include <memory>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
 PSUCombineEvent::PSUCombineEvent(
     sdbusplus::asio::object_server& objectServer,
     std::shared_ptr<sdbusplus::asio::connection>& conn,
     boost::asio::io_context& io, const std::string& psuName,
-    const PowerState& powerState,
-    boost::container::flat_map<std::string, std::vector<std::string>>&
-        eventPathList,
-    boost::container::flat_map<
-        std::string,
-        boost::container::flat_map<std::string, std::vector<std::string>>>&
-        groupEventPathList,
-    const std::string& combineEventName, double pollRate) :
+    const PowerState& powerState, EventPathList& eventPathList,
+    GroupEventPathList& groupEventPathList, const std::string& combineEventName,
+    double pollRate) :
     objServer(objectServer)
 {
     std::string psuNameEscaped = sensor_paths::escapePathForDbus(psuName);
@@ -189,7 +190,7 @@ PSUSubEvent::~PSUSubEvent()
     inputDev.close();
 }
 
-void PSUSubEvent::setupRead(void)
+void PSUSubEvent::setupRead()
 {
     if (!readingStateGood(readState))
     {
@@ -258,7 +259,6 @@ void PSUSubEvent::handleResponse(const boost::system::error_code& err,
 
     if (!err)
     {
-        std::string response;
         try
         {
             int nvalue = std::stoi(bufferRef.data());

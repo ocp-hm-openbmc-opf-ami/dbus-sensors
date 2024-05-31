@@ -1,7 +1,19 @@
 #include "DeviceMgmt.hpp"
 
+#include "Utils.hpp"
+
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
+#include <ios>
+#include <iostream>
+#include <optional>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <system_error>
+#include <variant>
 
 namespace fs = std::filesystem;
 
@@ -49,7 +61,7 @@ static std::string deviceDirName(uint64_t bus, uint64_t address)
     return name.str();
 }
 
-bool I2CDeviceParams::devicePresent(void) const
+bool I2CDeviceParams::devicePresent() const
 {
     fs::path path = i2cBusPath(bus) / deviceDirName(bus, address);
 
@@ -63,7 +75,7 @@ bool I2CDeviceParams::devicePresent(void) const
     return fs::exists(path, ec);
 }
 
-bool I2CDeviceParams::deviceStatic(void) const
+bool I2CDeviceParams::deviceStatic() const
 {
     if (!devicePresent())
     {
@@ -91,7 +103,7 @@ I2CDevice::~I2CDevice()
     destroy();
 }
 
-int I2CDevice::create(void) const
+int I2CDevice::create() const
 {
     // If it's already instantiated, there's nothing we need to do.
     if (params.devicePresent())
@@ -126,7 +138,7 @@ int I2CDevice::create(void) const
     return 0;
 }
 
-int I2CDevice::destroy(void) const
+int I2CDevice::destroy() const
 {
     // No params.devicePresent() check on this like in create(), since it
     // might be used to clean up after a device instantiation that was only

@@ -16,24 +16,36 @@
 
 #include "ExitAirTempSensor.hpp"
 
+#include "SensorPaths.hpp"
+#include "Thresholds.hpp"
 #include "Utils.hpp"
 #include "VariantVisitors.hpp"
+#include "sensor.hpp"
 
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/asio/error.hpp>
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/post.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/container/flat_map.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
+#include <sdbusplus/bus.hpp>
 #include <sdbusplus/bus/match.hpp>
+#include <sdbusplus/message.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <iostream>
 #include <limits>
 #include <memory>
-#include <numeric>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -286,7 +298,7 @@ CFMSensor::~CFMSensor()
     objServer.remove_interface(pwmLimitIface);
 }
 
-void CFMSensor::createMaxCFMIface(void)
+void CFMSensor::createMaxCFMIface()
 {
     cfmLimitIface->register_property("Limit", c2 * maxCFM * tachs.size());
     cfmLimitIface->initialize();
@@ -318,12 +330,12 @@ void CFMSensor::addTachRanges(const std::string& serviceName,
         "xyz.openbmc_project.Sensor.Value");
 }
 
-void CFMSensor::checkThresholds(void)
+void CFMSensor::checkThresholds()
 {
     thresholds::checkThresholds(this);
 }
 
-void CFMSensor::updateReading(void)
+void CFMSensor::updateReading()
 {
     double val = 0.0;
     if (calculate(val))
@@ -524,7 +536,7 @@ ExitAirTempSensor::~ExitAirTempSensor()
     objServer.remove_interface(association);
 }
 
-void ExitAirTempSensor::setupMatches(void)
+void ExitAirTempSensor::setupMatches()
 {
     constexpr const auto matchTypes{
         std::to_array<const char*>({"power", inletTemperatureSensor})};
@@ -632,7 +644,7 @@ void ExitAirTempSensor::setupMatches(void)
         std::array<const char*, 1>{sensorValueInterface});
 }
 
-void ExitAirTempSensor::updateReading(void)
+void ExitAirTempSensor::updateReading()
 {
     double val = 0.0;
     if (calculate(val))
@@ -646,7 +658,7 @@ void ExitAirTempSensor::updateReading(void)
     }
 }
 
-double ExitAirTempSensor::getTotalCFM(void)
+double ExitAirTempSensor::getTotalCFM()
 {
     double sum = 0;
     for (auto& sensor : cfmSensors)
@@ -825,7 +837,7 @@ bool ExitAirTempSensor::calculate(double& val)
     return true;
 }
 
-void ExitAirTempSensor::checkThresholds(void)
+void ExitAirTempSensor::checkThresholds()
 {
     thresholds::checkThresholds(this);
 }
@@ -873,6 +885,7 @@ void createSensor(sdbusplus::asio::object_server& objectServer,
                     parseThresholdsFromConfig(interfaces, sensorThresholds);
 
                     std::string name = loadVariant<std::string>(cfg, "Name");
+                    exitAirSensor = nullptr;
                     exitAirSensor = std::make_shared<ExitAirTempSensor>(
                         dbusConnection, name, path.str, objectServer,
                         std::move(sensorThresholds));

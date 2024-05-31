@@ -1,3 +1,9 @@
+systemd = dependency('systemd')
+systemd_system_unit_dir = systemd.get_variable(
+    'systemdsystemunitdir',
+    pkgconfig_define: ['prefix', get_option('prefix')],
+)
+
 unit_files = [
     ['adc', 'xyz.openbmc_project.adcsensor.service'],
     ['dbus-adc', 'xyz.openbmc_project.dbusadcsensor.service'],
@@ -22,14 +28,13 @@ unit_files = [
     ['digital', 'xyz.openbmc_project.digitaldiscrete.service'],
 ]
 
+fs = import('fs')
 foreach tuple : unit_files
     if get_option(tuple[0]).allowed()
-        configure_file(
-            copy: true,
-            input: tuple[1],
+        fs.copyfile(
+            tuple[1],
             install: true,
             install_dir: systemd_system_unit_dir,
-            output: tuple[1],
         )
     endif
 endforeach

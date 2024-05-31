@@ -90,9 +90,9 @@ bool findFiles(const std::filesystem::path& dirPath,
                std::string_view matchString,
                std::vector<std::filesystem::path>& foundPaths,
                int symlinkDepth = 1);
-bool isPowerOn(void);
-bool hasBiosPost(void);
-bool isChassisOn(void);
+bool isPowerOn();
+bool hasBiosPost();
+bool isChassisOn();
 void setupPowerMatchCallback(
     const std::shared_ptr<sdbusplus::asio::connection>& conn,
     std::function<void(PowerState type, bool state)>&& callback);
@@ -101,11 +101,6 @@ bool getSensorConfiguration(
     const std::string& type,
     const std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
     ManagedObjectType& resp, bool useCache);
-
-bool getSensorConfiguration(
-    const std::string& type,
-    const std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
-    ManagedObjectType& resp);
 
 void createAssociation(
     std::shared_ptr<sdbusplus::asio::dbus_interface>& association,
@@ -142,7 +137,7 @@ constexpr const char* set = "Set";
 
 namespace power
 {
-const static constexpr char* busname = "xyz.openbmc_project.State.Host";
+const static constexpr char* busname = "xyz.openbmc_project.State.Host0";
 const static constexpr char* interface = "xyz.openbmc_project.State.Host";
 const static constexpr char* path = "/xyz/openbmc_project/state/host0";
 const static constexpr char* property = "CurrentHostState";
@@ -150,7 +145,7 @@ const static constexpr char* property = "CurrentHostState";
 
 namespace chassis
 {
-const static constexpr char* busname = "xyz.openbmc_project.State.Chassis";
+const static constexpr char* busname = "xyz.openbmc_project.State.Chassis0";
 const static constexpr char* interface = "xyz.openbmc_project.State.Chassis";
 const static constexpr char* path = "/xyz/openbmc_project/state/chassis0";
 const static constexpr char* property = "CurrentPowerState";
@@ -159,11 +154,10 @@ const static constexpr char* sOn = ".On";
 
 namespace post
 {
-const static constexpr char* busname =
-    "xyz.openbmc_project.State.OperatingSystem";
+const static constexpr char* busname = "xyz.openbmc_project.State.Host0";
 const static constexpr char* interface =
     "xyz.openbmc_project.State.OperatingSystem.Status";
-const static constexpr char* path = "/xyz/openbmc_project/state/os";
+const static constexpr char* path = "/xyz/openbmc_project/state/host0";
 const static constexpr char* property = "OperatingSystemState";
 } // namespace post
 
