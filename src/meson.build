@@ -372,3 +372,16 @@ if get_option('digital').enabled()
         install: true,
     )
 endif
+
+if get_option('bmc-firmware-health').enabled()
+     executable(
+         'bmcfirmwarehealth',
+         'BMCFirmwareHealth.cpp',
+         'BMCFirmwareHealthMain.cpp',
+         dependencies: [
+             default_deps,
+             utils_dep,
+         ],
+         install: true,
+     )
+ endif

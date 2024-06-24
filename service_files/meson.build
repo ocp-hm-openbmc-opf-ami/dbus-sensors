@@ -26,6 +26,7 @@ unit_files = [
     ['batterystatus', 'xyz.openbmc_project.batterystatus.service'],
     ['acpidevice', 'xyz.openbmc_project.acpidevicestatus.service'],
     ['digital', 'xyz.openbmc_project.digitaldiscrete.service'],
+    ['bmc-firmware-health', 'xyz.openbmc_project.bmcfirmwarehealth.service'],
 ]
 
 fs = import('fs')
