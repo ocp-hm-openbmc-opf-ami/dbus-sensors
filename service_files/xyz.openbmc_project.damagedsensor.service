@@ -1,0 +1,19 @@
+[Unit]
+Description=Damaged Sensor
+StopWhenUnneeded=false
+Requires=xyz.openbmc_project.EntityManager.service
+After=xyz.openbmc_project.EntityManager.service
+Requires=xyz.openbmc_project.psusensor.service
+After=xyz.openbmc_project.psusensor.service
+Requires=xyz.openbmc_project.hwmontempsensor.service
+After=xyz.openbmc_project.hwmontempsensor.service
+
+[Service]
+Restart=always
+RestartSec=5
+#Allow time for all devices to get instantiated
+ExecStartPre=/bin/sleep 30
+ExecStart=/usr/bin/damagedsensor
+
+[Install]
+WantedBy=multi-user.target

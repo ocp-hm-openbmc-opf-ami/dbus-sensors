@@ -385,3 +385,18 @@ if get_option('bmc-firmware-health').enabled()
          install: true,
      )
  endif
+
+if get_option('damaged-sensor').allowed()
+    executable(
+        'damagedsensor',
+        'DamagedMain.cpp',
+        'DamagedSensor.cpp',
+        dependencies: [
+            default_deps,
+            devicemgmt_dep,
+            thresholds_dep,
+            utils_dep,
+        ],
+        install: true,
+    )
+endif
