@@ -105,7 +105,6 @@ void ACPIDeviceStatus::psuMonitorState()
         if (filePath.empty())
         {
             std::cerr << "filePath not found \n";
-            return; // temptest
         }
         std::optional<std::string> val = openAndRead(filePath);
         if (val.has_value())
