@@ -168,6 +168,26 @@ IntelCPUSensor::~IntelCPUSensor()
 }
 
 void IntelCPUSensor::setupRead(boost::asio::yield_context yield)
+/*void IntelCPUSensor::restartRead()
+*/
+{
+    std::weak_ptr<IntelCPUSensor> weakRef = weak_from_this();
+    waitTimer.expires_after(std::chrono::milliseconds(pollTime));
+    waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
+        if (ec == boost::asio::error::operation_aborted)
+        {
+            std::cerr << "Failed to reschedule\n";
+            return;
+        }
+        std::shared_ptr<IntelCPUSensor> self = weakRef.lock();
+
+        if (self)
+        {
+            self->setupRead();
+        }
+    });
+}
+void IntelCPUSensor::setupRead(boost::asio::yield_context yield)
 {
     if (readingStateGood())
     {
@@ -333,6 +353,11 @@ void IntelCPUSensor::handleResponse(const boost::system::error_code& err)
                 {
                     if (!std::equal(thresholds.begin(), thresholds.end(),
                                     newThresholds.begin(), newThresholds.end()))
+/*                    std::vector<thresholds::Threshold> newThresholds;
+                    if (parseThresholdsFromAttr(
+                            newThresholds, path,
+                            IntelCPUSensor::sensorScaleFactor, dtsOffset, 0))
+*/
                     {
                         if (!newThresholds.empty())
                         {

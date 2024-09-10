@@ -51,7 +51,9 @@ class IntelCPUSensor :
     static constexpr size_t warnAfterErrorCount = 10;
     static constexpr const char* labelTcontrol = "Tcontrol";
     void setupRead(boost::asio::yield_context yield);
-
+    /*
+void setupRead();
+*/
   private:
     sdbusplus::asio::object_server& objServer;
     boost::asio::streambuf readBuf;
@@ -84,8 +86,8 @@ inline bool cpuIsPresent(const SensorBaseConfigMap& gpioConfig)
     {
         return false;
     }
-    std::string gpioName = std::visit(VariantToStringVisitor(),
-                                      findName->second);
+    std::string gpioName =
+        std::visit(VariantToStringVisitor(), findName->second);
 
     auto findIndex = cpuPresence.find(gpioName);
     if (findIndex != cpuPresence.end())
