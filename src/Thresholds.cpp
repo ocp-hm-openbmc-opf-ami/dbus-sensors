@@ -550,7 +550,7 @@ void assertThresholds(Sensor* sensor, double assertValue,
 bool parseThresholdsFromAttr(
     std::vector<thresholds::Threshold>& thresholdVector,
     const std::string& inputPath, const double& scaleFactor,
-    const double& offset, const double& hysteresis)
+    const double& offset)
 {
     const boost::container::flat_map<
         std::string, std::vector<std::tuple<const char*, thresholds::Level,

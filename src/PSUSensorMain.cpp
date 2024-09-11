@@ -284,9 +284,10 @@ static void checkPWMSensor(
 
     for (const auto& [pwmLabel, pwmName] : pwmTable)
     {
-        return;
-    }
-    std::string labelHeadIndex = labelHead.substr(3);
+        if (pwmLabel != labelHead)
+        {
+            continue;
+        }
 
         const std::string pwmPathStr =
             fs::canonical(sensorPath).parent_path().string() + "/" +
@@ -294,14 +295,14 @@ static void checkPWMSensor(
 
         std::ifstream pwmFile(pwmPathStr);
 
-    std::string name = "Pwm_";
-    name += psuName;
-    name += "_Fan_";
-    name += labelHeadIndex;
+        std::string name = "Pwm_";
+        name += psuName;
+        name += "_";
+        name += pwmName;
 
-    std::string objPath = interfacePath;
-    objPath += "_Fan_";
-    objPath += labelHeadIndex;
+        std::string objPath = interfacePath;
+        objPath += "_";
+        objPath += pwmName;
 
         if (pwmFile.good())
         {
@@ -530,7 +531,7 @@ static void createSensorsCallback(
             sensorsChanged->erase(it);
         }
         checkEvent(directory.string(), eventMatch, eventPathList);
-        checkGroupEvent(directory.string(), groupEventPathList);
+        checkGroupEvent(directory.string(), groupEventMatch, groupEventPathList);
 
         PowerState readState = getPowerState(*baseConfig);
 
