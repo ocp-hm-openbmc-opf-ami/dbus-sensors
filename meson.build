@@ -1,10 +1,10 @@
 project(
     'dbus-sensors',
     'cpp',
-    default_options: ['warning_level=3', 'werror=true', 'cpp_std=c++20'],
+    default_options: ['warning_level=3', 'werror=true', 'cpp_std=c++23'],
     license: 'Apache-2.0',
     version: '0.1',
-    meson_version: '>=1.1',
+    meson_version: '>=1.1.1',
 )
 
 # Enable io_uring for all daemons with below flags.
@@ -34,23 +34,16 @@ add_project_arguments(
 threads = dependency('threads')
 # i2c-tools doesn't ship a pkg-config file for libi2c
 i2c = meson.get_compiler('cpp').find_library('i2c')
-
-sdbusplus = dependency('sdbusplus', include_type: 'system')
-
-boost_dep = dependency(
-    'boost',
-    modules: ['coroutine'],
-)
-
-phosphor_logging_dep = dependency('phosphor-logging')
 uring = dependency('liburing', include_type: 'system')
 nlohmann_json_dep = dependency('nlohmann_json', include_type: 'system')
 gpiodcxx = dependency('libgpiodcxx', default_options: ['bindings=cxx'])
 boost = dependency('boost', version: '>=1.83.0', include_type: 'system')
 sdbusplus = dependency('sdbusplus', include_type: 'system')
 phosphor_logging_dep = dependency('phosphor-logging')
-
-libudev = dependency('libudev', required : false, include_type: 'system')
+boost_dep = dependency(
+    'boost',
+    modules: ['coroutine'],
+)
 
 default_deps = [
     boost,
