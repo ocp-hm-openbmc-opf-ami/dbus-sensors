@@ -48,7 +48,7 @@ TachSensor::TachSensor(
     const std::string& path, const std::string& objectType,
     sdbusplus::asio::object_server& objectServer,
     std::shared_ptr<sdbusplus::asio::connection>& conn,
-    std::shared_ptr<PresenceSensor>& presenceSensor,
+    std::unique_ptr<PresenceSensor>&& presenceSensor,
     std::optional<RedundancySensor>* redundancy, boost::asio::io_context& io,
     const std::string& fanName,
     std::vector<thresholds::Threshold>&& thresholdsIn,
@@ -58,7 +58,8 @@ TachSensor::TachSensor(
     Sensor(escapeName(fanName), std::move(thresholdsIn), sensorConfiguration,
            objectType, false, false, limits.second, limits.first, conn,
            powerState),
-    objServer(objectServer), redundancy(redundancy), presence(presenceSensor),
+    objServer(objectServer), redundancy(redundancy),
+    presence(std::move(presenceSensor)),
     inputDev(io, path, boost::asio::random_access_file::read_only),
     waitTimer(io), path(path), led(ledIn)
 {

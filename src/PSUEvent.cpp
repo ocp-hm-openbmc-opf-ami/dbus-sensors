@@ -18,7 +18,6 @@
 
 #include "SensorPaths.hpp"
 #include "Utils.hpp"
-#include "Utils.hpp"
 
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/error.hpp>
