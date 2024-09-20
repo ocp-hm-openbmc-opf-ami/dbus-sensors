@@ -18,6 +18,8 @@
 
 #include "SensorPaths.hpp"
 #include "Thresholds.hpp"
+#include "SensorPaths.hpp"
+#include "Thresholds.hpp"
 #include "Utils.hpp"
 #include "sensor.hpp"
 

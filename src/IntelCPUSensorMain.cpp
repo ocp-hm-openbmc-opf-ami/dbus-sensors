@@ -155,25 +155,36 @@ std::string createSensorName(const std::string& label, const std::string& item,
     {
         sensorName += " " + item;
     }
-    sensorName += " CPU" + std::to_string(cpuId);
+
+    std::string cpuStr = "CPU" + std::to_string(cpuId);
+    constexpr const char* subLabel = "DIMM";
+    std::size_t found = label.find(subLabel);
+    if (found != std::string::npos)
+    {
+        sensorName = cpuStr + " " + sensorName;
+    }
+    else
+    {
+        sensorName += " " + cpuStr;
+    }
     // converting to Upper Camel case whole name
     bool isWordEnd = true;
     std::transform(sensorName.begin(), sensorName.end(), sensorName.begin(),
                    [&isWordEnd](int c) {
-        if (std::isspace(c) != 0)
-        {
-            isWordEnd = true;
-        }
-        else
-        {
-            if (isWordEnd)
-            {
-                isWordEnd = false;
-                return std::toupper(c);
-            }
-        }
-        return c;
-    });
+                       if (std::isspace(c) != 0)
+                       {
+                           isWordEnd = true;
+                       }
+                       else
+                       {
+                           if (isWordEnd)
+                           {
+                               isWordEnd = false;
+                               return std::toupper(c);
+                           }
+                       }
+                       return c;
+                   });
     return sensorName;
 }
 
@@ -324,8 +335,8 @@ bool createSensors(boost::asio::io_context& io,
             std::cerr << "could not determine CPU ID for " << hwmonName << "\n";
             continue;
         }
-        int cpuId = std::visit(VariantToUnsignedIntVisitor(),
-                               findCpuId->second);
+        int cpuId =
+            std::visit(VariantToUnsignedIntVisitor(), findCpuId->second);
 
         auto directory = hwmonNamePath.parent_path();
         std::vector<fs::path> inputPaths;
@@ -347,8 +358,8 @@ bool createSensors(boost::asio::io_context& io,
             }
             auto& [type, nr, item] = *fileParts;
             auto inputPathStr = inputPath.string();
-            auto labelPath = boost::replace_all_copy(inputPathStr, item,
-                                                     "label");
+            auto labelPath =
+                boost::replace_all_copy(inputPathStr, item, "label");
             std::ifstream labelFile(labelPath);
             if (!labelFile.good())
             {
@@ -736,8 +747,8 @@ void detectCpu(boost::asio::steady_timer& pingTimer,
                 else if (newState == State::READY)
                 {
                     rescanDelaySeconds = 5;
-                    std::cout << "DIMM(s) on " << config.name
-                              << " is/are detected\n";
+                    std::cout
+                        << "DIMM(s) on " << config.name << " is/are detected\n";
                 }
             }
 
@@ -942,10 +953,10 @@ bool getCpuConfig(std::shared_ptr<sdbusplus::asio::connection>& systemBus,
                 {
                     continue;
                 }
-                std::string nameRaw = std::visit(VariantToStringVisitor(),
-                                                 findName->second);
-                std::string name = std::regex_replace(nameRaw, illegalDbusRegex,
-                                                      "_");
+                std::string nameRaw =
+                    std::visit(VariantToStringVisitor(), findName->second);
+                std::string name =
+                    std::regex_replace(nameRaw, illegalDbusRegex, "_");
 
                 auto present = std::optional<bool>();
                 // if we can't detect it via gpio, we set presence later
@@ -1014,14 +1025,14 @@ bool getCpuConfig(std::shared_ptr<sdbusplus::asio::connection>& systemBus,
                     std::cerr << "Can't find 'Bus' setting in " << name << "\n";
                     continue;
                 }
-                uint64_t bus = std::visit(VariantToUnsignedIntVisitor(),
-                                          findBus->second);
+                uint64_t bus =
+                    std::visit(VariantToUnsignedIntVisitor(), findBus->second);
 
                 auto findAddress = cfg.find("Address");
                 if (findAddress == cfg.end())
                 {
-                    std::cerr << "Can't find 'Address' setting in " << name
-                              << "\n";
+                    std::cerr
+                        << "Can't find 'Address' setting in " << name << "\n";
                     continue;
                 }
                 uint64_t addr = std::visit(VariantToUnsignedIntVisitor(),
@@ -1192,24 +1203,24 @@ int main()
 
     std::function<void(sdbusplus::message_t&)> eventHandler =
         [&](sdbusplus::message_t& message) {
-        if (message.is_method_error())
-        {
-            std::cerr << "callback method error\n";
-            return;
-        }
-
-        if (debug)
-        {
-            std::cout << message.get_path() << " is changed\n";
-        }
-
-        // this implicitly cancels the timer
-        filterTimer.expires_after(std::chrono::seconds(1));
-        filterTimer.async_wait([&](const boost::system::error_code& ec) {
-            if (ec == boost::asio::error::operation_aborted)
+            if (message.is_method_error())
             {
-                return; // we're being canceled
+                std::cerr << "callback method error\n";
+                return;
             }
+
+            if (debug)
+            {
+                std::cout << message.get_path() << " is changed\n";
+            }
+
+            // this implicitly cancels the timer
+            filterTimer.expires_after(std::chrono::seconds(1));
+            filterTimer.async_wait([&](const boost::system::error_code& ec) {
+                if (ec == boost::asio::error::operation_aborted)
+                {
+                    return; // we're being canceled
+                }
 
             if (getCpuConfig(systemBus, cpuConfigs, sensorConfigs, io,
                              objectServer))
