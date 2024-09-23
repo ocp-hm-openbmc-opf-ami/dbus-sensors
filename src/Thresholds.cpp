@@ -574,6 +574,7 @@ bool parseThresholdsFromAttr(
              {"cap",
              {
                  std::make_tuple("cap_max", Level::WARNING, Direction::HIGH, 0.0),
+                 std::make_tuple("cap_min", Level::WARNING, Direction::LOW, 0.0),
              }},
         };
 
