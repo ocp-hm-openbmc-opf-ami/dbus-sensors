@@ -13,12 +13,12 @@ PsuStatus::PsuStatus(
     sdbusplus::asio::object_server& objectServer,
     std::shared_ptr<sdbusplus::asio::connection>& conn,
     boost::asio::io_context& io __attribute__((unused)),
-    const std::string& sensorName, const std::string& path,
+    const std::string& sensorName, const uint64_t bus, const uint64_t address,
     boost::container::flat_map<std::string, std::vector<std::string>> pathList,
     const std::string& sensorConfiguration) :
     Discrete(escapeName(sensorName), sensorConfiguration, conn),
-    objServer(objectServer), inputDev(io), waitTimer(io), fsPath(path),
-    eventPathList(pathList)
+    objServer(objectServer), inputDev(io), waitTimer(io), bus(bus),
+    address(address), eventPathList(pathList)
 {
     sensorInterface = objectServer.add_interface(
         "/xyz/openbmc_project/sensors/powersupply/" + name,
@@ -28,13 +28,68 @@ PsuStatus::PsuStatus(
         "/xyz/openbmc_project/sensors/powersupply/" + name,
         association::interface);
     setInitialProperties();
-    initHwmonPath(path);
 }
-void PsuStatus::initHwmonPath(const std::string path)
+
+// Function to search for a file recursively
+fs::path PsuStatus::findFile(const fs::path& directory,
+                             const std::string& filename)
 {
-    fsPath = path;
-    updateState(sensorInterface,
-                (static_cast<uint16_t>(PsuEvent::psuPresenceDetected)));
+    fs::path foundPath;
+    uint8_t depth = 0;
+    for (const auto& entry : fs::recursive_directory_iterator(directory))
+    {
+        if (entry.is_directory())
+        {
+            depth++;
+            if (depth == 1)
+            {
+                foundPath = entry.path();
+            }
+        }
+        else if (entry.is_regular_file() && entry.path().filename() == filename)
+        {
+            std::string match;
+            std::ifstream file(entry.path());
+            if (file.is_open())
+            {                  // always check whether the file is open
+                file >> match; // pipe file's content into stream
+                if ((match.compare("pmbus")) == 0)
+                {
+                    file.close();
+                    return foundPath;
+                }
+                file.close();
+            }
+        }
+    }
+    return ""; // Return an empty path if the file is not found
+}
+
+void PsuStatus::initHwmonPath(const uint64_t bus, const uint64_t address)
+{
+    eventPathList.clear();
+    fs::path fsPath;
+    std::ostringstream hex;
+    hex << std::hex << static_cast<uint64_t>(address);
+    const std::string& addrHexStr = hex.str();
+    fs::path hwmonPath = "/sys/bus/i2c/devices/" + std::to_string(bus) + "-00" +
+                         addrHexStr + "/hwmon/";
+    if (fs::exists(hwmonPath) && fs::is_directory(hwmonPath))
+    {
+        std::string targetFilename = "name";
+        fsPath = findFile(hwmonPath, targetFilename);
+        if (fsPath.empty())
+        {
+            updateState(sensorInterface,
+                        (static_cast<uint16_t>(PsuEvent::psuConfigurationErr)));
+            std::cerr << "filePath not found \n";
+        }
+        else
+        {
+            updateState(sensorInterface,
+                        (static_cast<uint16_t>(PsuEvent::psuPresenceDetected)));
+        }
+    }
 
     for (const auto& match : eventMatch)
     {
@@ -56,6 +111,7 @@ void PsuStatus::initHwmonPath(const std::string path)
 }
 void PsuStatus::setupRead()
 {
+    initHwmonPath(bus, address);
     for (const auto& match : eventPathList)
     {
         const std::vector<std::string>& eventAttrs = match.second;
@@ -89,6 +145,7 @@ void PsuStatus::setupRead()
             restartRead();
         }
     }
+    restartRead();
 }
 void PsuStatus::updateEvent(uint16_t offset, uint16_t value)
 {

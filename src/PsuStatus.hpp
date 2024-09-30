@@ -29,6 +29,7 @@ enum class PsuEvent : uint16_t
     psuPresenceDetected = (1 << 0),
     PredictiveFailure = (1 << 2),
     psuInputACLost = (1 << 3),
+    psuConfigurationErr = (1 << 6),
 };
 
 static boost::container::flat_map<std::string, std::vector<std::string>>
@@ -49,7 +50,7 @@ class PsuStatus :
     PsuStatus(sdbusplus::asio::object_server& objectServer,
               std::shared_ptr<sdbusplus::asio::connection>& conn,
               boost::asio::io_context& io, const std::string& sensorName,
-              const std::string& path,
+              const uint64_t bus, const uint64_t address,
               boost::container::flat_map<std::string, std::vector<std::string>>
                   eventPathList,
               const std::string& sensorConfiguration);
@@ -57,13 +58,15 @@ class PsuStatus :
     void setupRead(void);
     void restartRead(void);
     void updateEvent(uint16_t, uint16_t);
-    void initHwmonPath(const std::string);
+    void initHwmonPath(uint64_t bus, uint64_t address);
 
   private:
     sdbusplus::asio::object_server& objServer;
     boost::asio::posix::stream_descriptor inputDev;
     boost::asio::steady_timer waitTimer;
-    std::string fsPath;
+    uint64_t bus;
+    uint64_t address;
     boost::container::flat_map<std::string, std::vector<std::string>>
         eventPathList;
+    fs::path findFile(const fs::path& directory, const std::string& filename);
 };

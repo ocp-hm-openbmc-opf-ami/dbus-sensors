@@ -33,68 +33,7 @@ void createSensors(
                                                     const ManagedObjectType&
                                                         sensorConfigs) {
         bool firstScan = sensorsChanged == nullptr;
-        std::vector<fs::path> pmbusPaths;
-        if (!findFiles(fs::path("/sys/class/hwmon"), "name", pmbusPaths))
-        {
-            std::cerr << "No PSU sensors in system\n";
-            return;
-        }
-        boost::container::flat_set<std::string> directories;
-        for (const auto& pmbusPath : pmbusPaths)
-        {
 
-            std::ifstream nameFile(pmbusPath);
-            if (!nameFile.good())
-            {
-                std::cerr << " Failure finding power supply path \n";
-                continue;
-            }
-
-            std::string pmbusName;
-            std::getline(nameFile, pmbusName);
-            nameFile.close();
-
-            if (pmbusName != "pmbus")
-            {
-                continue;
-            }
-
-            auto directory = pmbusPath.parent_path();
-
-            auto ret = directories.insert(directory.string());
-            if (!ret.second)
-            {
-                std::cerr << " Duplicate path " << directory.string() << "\n";
-                continue;
-            }
-            fs::path device = directory / "device";
-            std::string deviceName = fs::canonical(device).stem();
-            auto findHyphen = deviceName.find('-');
-            if (findHyphen == std::string::npos)
-            {
-                std::cerr << " Found bad device " << deviceName << "\n";
-                continue;
-            }
-
-            std::string busStr = deviceName.substr(0, findHyphen);
-            std::string addrStr = deviceName.substr(findHyphen + 1);
-
-            size_t bus = 0;
-            size_t addr = 0;
-
-            try
-            {
-
-                bus = std::stoi(busStr);
-                addr = std::stoi(addrStr, nullptr, 16);
-            }
-
-            catch (const std::invalid_argument&)
-            {
-                std::cerr << " Error parsing bus " << busStr << " addr "
-                          << addrStr << "\n";
-                continue;
-            }
             const SensorBaseConfigMap* baseConfig = nullptr;
             const SensorData* sensorData = nullptr;
             const std::string* interfacePath = nullptr;
@@ -116,8 +55,8 @@ void createSensors(
 
                 if (baseConfig == nullptr)
                 {
-                    std::cerr << " error finding base configuration for "
-                              << deviceName << "\n";
+                    std::cerr << " error finding base configuration "
+                              << "\n"; 
                     continue;
                 }
                 auto configBus = baseConfig->find("Bus");
@@ -140,19 +79,12 @@ void createSensors(
                                  "configuration \n";
                     continue;
                 }
-                if ((*confBus != bus) || (*confAddr != addr))
-                {
-                    std::cerr << "Skipping as configuration not matching\n";
-                    continue;
-                }
-                break;
-            }
 
             auto findSensorName = baseConfig->find("Name");
             if (findSensorName == baseConfig->end())
             {
-                std::cerr << " could not determine config name for "
-                          << deviceName << "\n";
+                std::cerr << " could not determine config name "
+                          << "\n";
                 continue;
             }
             std::string sensorName =
@@ -185,7 +117,7 @@ void createSensors(
             boost::container::flat_map<std::string, std::vector<std::string>>
                 pathList;
             sensorConstruct = std::make_shared<PsuStatus>(
-                objectServer, dbusConnection, io, sensorName, directory,
+                objectServer, dbusConnection, io, sensorName, *confBus, *confAddr,
                 pathList, *interfacePath);
             sensorConstruct->setupRead();
         }
