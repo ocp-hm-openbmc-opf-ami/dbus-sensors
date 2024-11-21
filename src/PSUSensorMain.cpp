@@ -162,9 +162,7 @@ static boost::container::flat_map<std::string, std::unique_ptr<PwmSensor>>
     pwmSensors;
 static boost::container::flat_map<std::string, std::string> sensorTable;
 static boost::container::flat_map<std::string, PSUProperty> labelMatch;
-static boost::container::flat_map<std::string, std::string> pwmTable;
 static EventPathList eventMatch;
-static GroupEventPathList groupEventMatch;
 static EventPathList limitEventMatch;
 
 static boost::container::flat_map<size_t, bool> cpuPresence;
@@ -200,34 +198,20 @@ void checkEvent(const std::string& directory, const EventPathList& eventMatch,
 // Check Group Events which contains more than one targets in each combine
 // events.
 void checkGroupEvent(const std::string& directory,
-                     const GroupEventPathList& groupEventMatch,
                      GroupEventPathList& groupEventPathList)
 {
-    for (const auto& match : groupEventMatch)
+    EventPathList pathList;
+    std::vector<fs::path> eventPaths;
+    if (!findFiles(fs::path(directory), R"(fan\d+_(alarm|fault))", eventPaths))
     {
-        const std::string& groupEventName = match.first;
-        const EventPathList events = match.second;
-        EventPathList pathList;
-        for (const auto& match : events)
-        {
-            const std::string& eventName = match.first;
-            const std::vector<std::string>& eventAttrs = match.second;
-            for (const auto& eventAttr : eventAttrs)
-            {
-                std::string eventPath = directory;
-                eventPath += "/";
-                eventPath += eventAttr;
-                std::ifstream eventFile(eventPath);
-                if (!eventFile.good())
-                {
-                    continue;
-                }
-
-                pathList[eventName].push_back(eventPath);
-            }
-        }
-        groupEventPathList[groupEventName] = pathList;
+        return;
     }
+    for (const auto& eventPath : eventPaths)
+    {
+        std::string attrName = eventPath.filename();
+        pathList[attrName.substr(0, attrName.find('_'))].push_back(eventPath);
+    }
+    groupEventPathList["FanFault"] = pathList;
 }
 
 // Function checkEventLimits will check all the psu related xxx_input attributes
@@ -282,33 +266,31 @@ static void checkPWMSensor(
         return;
     }
 
-    for (const auto& [pwmLabel, pwmName] : pwmTable)
+    if (!labelHead.starts_with("fan"))
     {
-        if (pwmLabel != labelHead)
-        {
-            continue;
-        }
+        return;
+    }
+    std::string labelHeadIndex = labelHead.substr(3);
+    const std::string pwmPathStr =
+        fs::canonical(sensorPath).parent_path().string() + "/" +
+        boost::replace_all_copy(labelHead, "fan", "pwm");
 
-        const std::string pwmPathStr =
-            fs::canonical(sensorPath).parent_path().string() + "/" +
-            boost::replace_all_copy(pwmLabel, "fan", "pwm");
+    std::ifstream pwmFile(pwmPathStr);
 
-        std::ifstream pwmFile(pwmPathStr);
+    std::string name = "Pwm_";
+    name += psuName;
+    name += "_Fan_";
+    name += labelHeadIndex;
 
-        std::string name = "Pwm_";
-        name += psuName;
-        name += "_";
-        name += pwmName;
+    std::string objPath = interfacePath;
+    objPath += "_Fan_";
+    objPath += labelHeadIndex;
 
-        std::string objPath = interfacePath;
-        objPath += "_";
-        objPath += pwmName;
-
-        if (pwmFile.good())
-        {
-            pwmSensors[psuName + labelHead] = std::make_unique<PwmSensor>(
-                name, pwmPathStr, dbusConnection, objectServer, objPath, "PSU");
-            continue;
+    if (pwmFile.good())
+    {
+        pwmSensors[psuName + labelHead] = std::make_unique<PwmSensor>(
+            name, pwmPathStr, dbusConnection, objectServer, objPath, "PSU");
+        return;
         }
 
         const std::string& sensorPathStr = sensorPath.string();
@@ -319,9 +301,8 @@ static void checkPWMSensor(
         {
             pwmSensors[psuName + labelHead] = std::make_unique<PwmSensor>(
                 name, rpmPathStr, dbusConnection, objectServer, objPath, "PSU");
-            continue;
+            return;
         }
-    }
 }
 
 static void createSensorsCallback(
@@ -531,7 +512,7 @@ static void createSensorsCallback(
             sensorsChanged->erase(it);
         }
         checkEvent(directory.string(), eventMatch, eventPathList);
-        checkGroupEvent(directory.string(), groupEventMatch, groupEventPathList);
+        checkGroupEvent(directory.string(), groupEventPathList);
 
         PowerState readState = getPowerState(*baseConfig);
 
@@ -692,7 +673,17 @@ static void createSensorsCallback(
             }
 
             auto findProperty = labelMatch.find(sensorNameSubStr);
-            if (findProperty == labelMatch.end())
+            auto findLabel = labelMatch.find(labelHead);
+            if (findLabel != labelMatch.end())
+            {
+                if constexpr (debug)
+                {
+                    std::cerr << "find matching default property for "
+                              << sensorNameSubStr << "\n";
+                }
+                findProperty = findLabel;
+            }
+            else if (findProperty == labelMatch.end())
             {
                 if constexpr (debug)
                 {
@@ -947,6 +938,13 @@ static void createSensorsCallback(
                 // Sensor name not customized, do prefix/suffix composition,
                 // preserving default behavior by using psuNameFromIndex.
                 sensorName = psuNameFromIndex + " " + psuProperty.labelTypeName;
+
+                // The labelTypeName of a fan can be:
+                // "Fan Speed 1", "Fan Speed 2", "Fan Speed 3" ...
+                if (labelHead == "fan" + nameIndexStr)
+                {
+                    sensorName += nameIndexStr;
+                }
             }
 
             if constexpr (debug)
