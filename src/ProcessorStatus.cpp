@@ -13,20 +13,29 @@ ProcessorStatus::ProcessorStatus(
     sdbusplus::asio::object_server& objectServer,
     std::shared_ptr<sdbusplus::asio::connection>& conn,
     boost::asio::io_context& io, const std::string& sensorName,
-    const std::string& gpioName, const std::string& sensorConfiguration) :
-    Discrete(escapeName(sensorName), sensorConfiguration, conn),
-    gpio(gpioName), objServer(objectServer),procPresentEvent(io)
+    const std::string& gpioName, const std::string& sensorConfiguration,
+    std::string& DBusObjectPath, std::string& DBusIface,
+    std::string& DBusProperty, bool dbusFound) :
+    Discrete(escapeName(sensorName), sensorConfiguration, conn), gpio(gpioName),
+    objServer(objectServer), procPresentEvent(io), dbus(dbusFound),
+    waitTimer(io), conn(conn), DBusObjectPath(DBusObjectPath),
+    DBusIface(DBusIface), DBusProperty(DBusProperty)
 {
-    sensorInterface = objectServer.add_interface(
-        "/xyz/openbmc_project/sensors/cpu/" + name,
-        "xyz.openbmc_project.Sensor.State");
+    sensorInterface =
+        objectServer.add_interface("/xyz/openbmc_project/sensors/cpu/" + name,
+                                   "xyz.openbmc_project.Sensor.State");
 
     association = objectServer.add_interface(
-        "/xyz/openbmc_project/sensors/cpu/" + name,
-        association::interface);
+        "/xyz/openbmc_project/sensors/cpu/" + name, association::interface);
     setInitialProperties();
-
-    setupEvent(conn, gpioName, procPresentLine, procPresentEvent);
+    if (dbus)
+    {
+        monitorDbus();
+    }
+    else
+    {
+        setupEvent(conn, gpioName, procPresentLine, procPresentEvent);
+    }
 }
 
 ProcessorStatus::~ProcessorStatus()
@@ -78,7 +87,9 @@ bool ProcessorStatus::setupEvent(
     if (state)
     {
         addSelEntry(conn, logData, procPresence, state);
-        updateState(sensorInterface,(static_cast<uint16_t>(1 << static_cast<uint16_t>(CpuEvent::PresenceDetected))));
+        updateState(sensorInterface,
+                    (static_cast<uint16_t>(1 << static_cast<uint16_t>(
+                                               CpuEvent::PresenceDetected))));
     }
 
     monitor(conn, logData, procPresence, gpioEventDescriptor, gpioLine);
@@ -92,7 +103,6 @@ void ProcessorStatus::monitor(
     const std::vector<uint8_t> procPresence,
     boost::asio::posix::stream_descriptor& event, gpiod::line& line)
 {
-
     event.async_wait(
         boost::asio::posix::stream_descriptor::wait_read,
         [this, &conn, &event, &line, &logData,
@@ -103,14 +113,76 @@ void ProcessorStatus::monitor(
                 return;
             }
             gpiod::line_event lineEvent = line.event_read();
-            if( lineEvent.event_type == gpiod::line_event::FALLING_EDGE)
+            if (lineEvent.event_type == gpiod::line_event::FALLING_EDGE)
             {
-            updateState(sensorInterface,(static_cast<uint16_t>(1 << static_cast<uint16_t>(CpuEvent::PresenceDetected))));
-            addSelEntry(conn, logData, procPresence,
-                        lineEvent.event_type ==
-                            gpiod::line_event::FALLING_EDGE);
+                updateState(
+                    sensorInterface,
+                    (static_cast<uint16_t>(1 << static_cast<uint16_t>(
+                                               CpuEvent::PresenceDetected))));
+                addSelEntry(conn, logData, procPresence,
+                            lineEvent.event_type ==
+                                gpiod::line_event::FALLING_EDGE);
             }
             // Start monitoring for next event
             monitor(conn, logData, procPresence, event, line);
         });
+}
+
+void ProcessorStatus::monitorDbus()
+{
+    std::string service;
+    bool state = false;
+    std::vector<std::string> logData;
+    try
+    {
+        service = getService(DBusIface.c_str(), DBusObjectPath.c_str());
+        propertyMap value;
+        auto method = conn->new_method_call(
+            service.c_str(), DBusObjectPath.c_str(), PROP_INTF, METHOD_GET_ALL);
+        method.append(DBusIface.c_str());
+        auto reply = conn->call(method);
+        if (reply.is_method_error())
+        {
+            phosphor::logging::log<phosphor::logging::level::ERR>(
+                "Failed to get all properties");
+        }
+        reply.read(value);
+        auto findState = value.find(DBusProperty.c_str());
+        if (findState != value.end())
+        {
+            state = std::get<bool>(value.at(DBusProperty.c_str()));
+        }
+    }
+    catch (sdbusplus::exception_t& e)
+    {
+        phosphor::logging::log<phosphor::logging::level::ERR>(
+            "Failed to fetch",
+            phosphor::logging::entry("EXCEPTION=%s", e.what()));
+    }
+
+    logData.push_back(name);
+    logData.push_back("Presence Detected");
+    logData.push_back(processorPath + name);
+    logData.push_back("SensorProcessorPresence");
+    if (state)
+    {
+        addSelEntry(conn, logData, procPresence, state);
+        updateState(sensorInterface,
+                    (static_cast<uint16_t>(1 << static_cast<uint16_t>(
+                                               CpuEvent::PresenceDetected))));
+    }
+    restartRead();
+}
+
+void ProcessorStatus::restartRead()
+{
+    waitTimer.expires_after(std::chrono::milliseconds(sensorPollMs));
+    waitTimer.async_wait([this](const boost::system::error_code& ec) {
+        if (ec)
+        {
+            return;
+        }
+
+        this->monitorDbus();
+    });
 }

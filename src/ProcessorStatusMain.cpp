@@ -62,16 +62,57 @@ void createSensors(
                 std::string sensorName =
                     std::get<std::string>(findSensorName->second);
 
-                auto findGpioName = baseConfiguration->second.find("GpioName");
-                if (findGpioName == baseConfiguration->second.end())
+                bool dbusFound = false;
+                std::string gpioName;
+                std::string dbusPath;
+                std::string dbusIface;
+                std::string dbusPropName;
+                auto dbusPathFound = baseConfiguration->second.find("DBusPath");
+                if (!(dbusPathFound == baseConfiguration->second.end()))
                 {
-                    std::cerr << "could not determine gpio name"
-                              << "\n";
-                    continue;
+                    dbusFound = true;
                 }
-                std::string gpioName =
-                    std::get<std::string>(findGpioName->second);
+                if (dbusFound)
+                {
+                    dbusPath = std::visit(VariantToStringVisitor(),
+                                          dbusPathFound->second);
 
+                    auto dbusIfaceFound =
+                        baseConfiguration->second.find("DBusIface");
+                    if (dbusIfaceFound == baseConfiguration->second.end())
+                    {
+                        std::cerr
+                            << "Missing mandatory DBusIface property for: "
+                            << baseConfiguration->first << " object\n";
+                        continue;
+                    }
+                    dbusIface = std::visit(VariantToStringVisitor(),
+                                           dbusIfaceFound->second);
+
+                    auto dbusPropNameFound =
+                        baseConfiguration->second.find("DBusProperty");
+                    if (dbusPropNameFound == baseConfiguration->second.end())
+                    {
+                        std::cerr
+                            << "Missing mandatory DBusProperty property for: "
+                            << baseConfiguration->first << " object\n";
+                        continue;
+                    }
+                    dbusPropName = std::visit(VariantToStringVisitor(),
+                                              dbusPropNameFound->second);
+                }
+                else
+                {
+                    auto findGpioName =
+                        baseConfiguration->second.find("GpioName");
+                    if (findGpioName == baseConfiguration->second.end())
+                    {
+                        std::cerr << "could not determine gpio name"
+                                  << "\n";
+                        continue;
+                    }
+                    gpioName = std::get<std::string>(findGpioName->second);
+                }
                 // on rescans, only update sensors we were signaled by
                 auto findSensor = sensors.find(sensorName);
                 if (!firstScan && findSensor != sensors.end())
@@ -94,23 +135,27 @@ void createSensors(
                         continue;
                     }
                 }
-
-                auto findPolarity = baseConfiguration->second.find("Polarity");
-                if (findPolarity == baseConfiguration->second.end())
+                std::string polarity;
+                if (!dbusFound)
                 {
-                    std::cerr << "could not determine configuration polarity"
-                              << "\n";
-                    continue;
+                    auto findPolarity =
+                        baseConfiguration->second.find("Polarity");
+                    if (findPolarity == baseConfiguration->second.end())
+                    {
+                        std::cerr
+                            << "could not determine configuration polarity"
+                            << "\n";
+                        continue;
+                    }
+                    polarity = std::get<std::string>(findPolarity->second);
                 }
-                std::string polarity =
-                    std::get<std::string>(findPolarity->second);
-
                 auto& sensorConstruct = sensors[sensorName];
                 sensorConstruct = nullptr;
 
                 sensorConstruct = std::make_shared<ProcessorStatus>(
                     objectServer, dbusConnection, io, sensorName, gpioName,
-                    *interfacePath);
+                    *interfacePath, dbusPath, dbusIface, dbusPropName,
+                    dbusFound);
             }
         });
 

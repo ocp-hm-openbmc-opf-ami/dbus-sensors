@@ -5,6 +5,7 @@
 #include <boost/asio/deadline_timer.hpp>
 #include <boost/asio/io_service.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/asio/streambuf.hpp>
 #include <gpiod.hpp>
 #include <sdbusplus/asio/object_server.hpp>
@@ -16,8 +17,9 @@
 #include <vector>
 
 namespace fs = std::filesystem;
+static constexpr unsigned int sensorPollMs = 2000;
 
-enum class  CpuEvent : uint16_t
+enum class CpuEvent : uint16_t
 {
     PresenceDetected = 0x07,
 };
@@ -31,7 +33,9 @@ class ProcessorStatus :
                     std::shared_ptr<sdbusplus::asio::connection>& conn,
                     boost::asio::io_context& io, const std::string& sensorName,
                     const std::string& gpioName,
-                    const std::string& sensorConfiguration);
+                    const std::string& sensorConfiguration,
+                    std::string& DBusObjectPath, std::string& DBusIface,
+                    std::string& DBusProperty, bool dbus);
     ~ProcessorStatus() override;
 
     std::string gpio;
@@ -41,6 +45,12 @@ class ProcessorStatus :
     // GPIO Lines and Event Descriptors
     gpiod::line procPresentLine;
     boost::asio::posix::stream_descriptor procPresentEvent;
+    bool dbus;
+    boost::asio::steady_timer waitTimer;
+    std::shared_ptr<sdbusplus::asio::connection>& conn;
+    std::string DBusObjectPath;
+    std::string DBusIface;
+    std::string DBusProperty;
     bool setupEvent(std::shared_ptr<sdbusplus::asio::connection>& conn,
                     const std::string& gpioName, gpiod::line& gpioLine,
                     boost::asio::posix::stream_descriptor& gpioEventDescriptor);
@@ -49,4 +59,6 @@ class ProcessorStatus :
                  const std::vector<uint8_t> procPresence,
                  boost::asio::posix::stream_descriptor& event,
                  gpiod::line& line);
+    void monitorDbus();
+    void restartRead();
 };
