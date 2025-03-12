@@ -26,7 +26,7 @@
 #include <sdbusplus/asio/object_server.hpp>
 #include <sdbusplus/bus/match.hpp>
 
-static constexpr float defaultPollRate = 0.5;
+static constexpr float defaultPollRate = 1.0;
 static constexpr float defaultGpioBridgeSetupTime = 0.02;
 static constexpr float defaultScaleFactor = 1.0;
 

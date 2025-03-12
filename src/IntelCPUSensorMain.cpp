@@ -72,7 +72,7 @@ static constexpr bool debug = false;
 static std::unique_ptr<boost::asio::steady_timer> waitTimer = nullptr;
 static bool sensorMapUpdated = false;
 
-static constexpr size_t sensorPollLoopMs = 1000;
+static constexpr size_t sensorPollLoopMs = 2000;
 static constexpr size_t sensorEmptyWaitMs = 10000;
 static constexpr size_t failSensorLimit =
     5; // peci timeout is 700ms, 5 timeout would be 3.5seconds
