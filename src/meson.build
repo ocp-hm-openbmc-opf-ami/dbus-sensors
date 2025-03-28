@@ -400,3 +400,22 @@ if get_option('damaged-sensor').allowed()
         install: true,
     )
 endif
+
+if get_option('apisensor').allowed()
+    executable(
+        'apisensor',
+        'APISensor.cpp',
+        'APISensorMain.cpp',
+        dependencies: [
+            default_deps,
+            gpiodcxx,
+            i2c,
+            thresholds_dep,
+            libudev,
+            utils_dep,
+            peci_dep,
+        ],
+        install: true,
+    )
+endif
+

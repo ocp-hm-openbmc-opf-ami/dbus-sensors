@@ -24,3 +24,5 @@ option('batterystatus', type: 'feature', value: 'disabled', description: 'Enable
 option('acpidevice', type: 'feature', value: 'disabled', description: 'Enable acpi device status sensor.',)
 option('bmc-firmware-health', type: 'feature', value: 'disabled', description: 'Enable Management Subsystem Health sensor.',)
 option('damaged-sensor', type: 'feature', value: 'disabled', description: 'Enable feature to list damaged or wrongly configured sensor ',)
+option('apisensor', type: 'feature', value: 'enabled', description: 'Enable API sensor.',)
+

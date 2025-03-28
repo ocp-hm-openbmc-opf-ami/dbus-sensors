@@ -68,9 +68,13 @@ inline std::string escapeName(const std::string& sensorName)
 }
 
 // Add IPMI & Refish Log
+using AdditionalData = std::map<std::string, std::string>;
 void addSelEntry(std::shared_ptr<sdbusplus::asio::connection>& conn,
                  std::vector<std::string> logData,
-                 std::vector<uint8_t> eventData, bool assert);
+                 std::vector<uint8_t> eventData, bool assert,
+                 const AdditionalData addData = AdditionalData());
+
+void toHexStr(const std::vector<uint8_t> bytes, std::string& hexStr);
 
 enum class PowerState
 {

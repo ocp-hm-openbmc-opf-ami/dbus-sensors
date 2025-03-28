@@ -64,13 +64,22 @@ struct Discrete
 
     std::shared_ptr<sdbusplus::asio::connection> dbusConnection;
 
+    bool internalSet = false;
+    // This member variable provides a hook that can be used to receive
+    // notification whenever this Sensor's value is externally set via D-Bus.
+    // If interested, assign your own lambda to this variable, during
+    // construction of your Sensor subclass. See ExternalSensor for example.
+    std::function<void()> externalSetHook;
+
     int updateState(std::shared_ptr<sdbusplus::asio::dbus_interface>& interface,
                     const uint16_t& newState)
     {
+        internalSet = true;
         if (interface && !(interface->set_property("State", newState)))
         {
             std::cerr << "error setting State \n";
         }
+        internalSet = false;
         return 1;
     }
 
@@ -79,6 +88,15 @@ struct Discrete
         oldState = newState;
         state = newState;
 
+        if (!internalSet)
+        {
+            // Trigger the hook, as an external set has just happened
+            if (externalSetHook)
+            {
+                externalSetHook();
+            }
+        }
+    
         return 1;
     }
 

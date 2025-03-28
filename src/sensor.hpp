@@ -542,7 +542,15 @@ struct Sensor
         {
             return (lNan != rNan);
         }
-        return std::abs(lVal - rVal) > hysteresisPublish;
+#if 0
+        // hysteresisPublish = (maxValue - minValue) * 0.0001
+        // When using large differences between maxValue & minValue.
+        // the logic below will break the sensors ability to 
+        // receive updates.
+        return std::abs(lVal - rVal) > hysteresisPublish; 
+#else        
+        return lVal != rVal; // Instead, just do a simple comparison.
+#endif
     }
 
   private:
