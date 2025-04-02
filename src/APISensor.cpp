@@ -83,7 +83,6 @@ APISensor::APISensor(
     {
         throw std::runtime_error("Units not in allow list");
     }
-    dbusSensorType = dbusPath;
 
     // If sensor has an InitFunction, get function pointer and call it
     if (!initFuncName.empty())
@@ -388,8 +387,6 @@ APISensorDiscrete::APISensorDiscrete(
     pollTimeMs(sensorPollTimeMs),
     libAPISensorHandle(libHandle)
 {
-    dbusSensorType = "discrete";
-
     // If ReadFunction is missing, sensor will not be operational
     if (readFuncName.empty())
     {
@@ -511,7 +508,7 @@ void APISensorDiscrete::performRead(void)
                 std::vector<std::string> logData;
                 std::vector<std::pair<uint16_t, int>> assertionsOccurred;   // assertion mask and bit position
                 std::vector<std::pair<uint16_t, int>> deassertionsOccurred; // deassertion mask and bit position
-                std::string sPath = "/xyz/openbmc_project/sensors/" + dbusSensorType + "/" + name;
+                std::string sPath = "/xyz/openbmc_project/sensors/" + objType + "/" + name;
                 std::string msg;
                 std::map<std::string, std::string> addData;
 

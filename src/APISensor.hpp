@@ -93,7 +93,7 @@ class APISensor :
         {"Hours", "hours"},
         {"Count", "count"}
     };
-    std::string dbusSensorType;
+
     std::string objType;
     sdbusplus::asio::object_server& objServer;
     boost::asio::steady_timer monitorTimer;
@@ -155,7 +155,6 @@ class APISensorDiscrete :
     // which was obtained from dlsym of libapisensor.so
     void performRead(void);
 
-    std::string dbusSensorType;
     std::string objType;
     sdbusplus::asio::object_server& objServer;
     boost::asio::steady_timer monitorTimer;
