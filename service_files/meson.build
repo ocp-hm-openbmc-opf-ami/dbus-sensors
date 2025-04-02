@@ -28,10 +28,6 @@ unit_files = [
     ['digital', 'xyz.openbmc_project.digitaldiscrete.service'],
     ['bmc-firmware-health', 'xyz.openbmc_project.bmcfirmwarehealth.service'],
     ['damaged-sensor', 'xyz.openbmc_project.damagedsensor.service'],
-    ['apisensor', 'xyz.openbmc_project.apisensor.service'],
-    ['apisensor', 'xyz.openbmc_project.apisensor2.service'],
-    ['apisensor', 'xyz.openbmc_project.apisensor3.service'],
-    ['apisensor', 'xyz.openbmc_project.apisensor4.service'],
 ]
 
 fs = import('fs')

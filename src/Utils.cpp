@@ -63,6 +63,7 @@ namespace fs = std::filesystem;
 using ErrLvl = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
 auto sevLvl = ErrLvl::Informational;
 using namespace phosphor::logging;
+using AdditionalData = std::map<std::string, std::string>;
 static bool powerStatusOn = false;
 static bool biosHasPost = false;
 static bool manufacturingMode = false;
@@ -74,12 +75,12 @@ static std::unique_ptr<sdbusplus::bus::match_t> chassisMatch = nullptr;
 
 void addSelEntry(std::shared_ptr<sdbusplus::asio::connection>& conn,
                  const std::vector<std::string> logData,
-                 const std::vector<uint8_t> eventData, bool assert,
-                 const AdditionalData addData)
+                 const std::vector<uint8_t> eventData, bool assert)
 {
     const std::string sensorName = logData[0];
     const std::string eventName = logData[1];
     const std::string sensorPath = logData[2];
+    AdditionalData addData;
     std::stringstream stream;
 
     stream << std::hex << std::uppercase << std::setfill('0');
@@ -910,15 +911,4 @@ std::vector<std::unique_ptr<sdbusplus::bus::match_t>>
         types.push_back(type.data());
     }
     return setupPropertiesChangedMatches(bus, {types}, handler);
-}
-
-void toHexStr(const std::vector<uint8_t> bytes, std::string& hexStr)
-{
-    std::stringstream stream;
-    stream << std::hex << std::uppercase << std::setfill('0');
-    for (const uint8_t& byte : bytes)
-    {
-        stream << std::setw(2) << static_cast<int>(byte);
-    }
-    hexStr = stream.str();
 }
