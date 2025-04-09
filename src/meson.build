@@ -400,3 +400,17 @@ if get_option('damaged-sensor').allowed()
         install: true,
     )
 endif
+
+if get_option('logstatus').enabled()
+    executable(
+        'logstatus',
+        'LoggingStatus.cpp',
+        'LoggingStatusMain.cpp',
+        dependencies: [
+            default_deps,
+            utils_dep,
+        ],
+        install: true,
+    )
+endif
+
