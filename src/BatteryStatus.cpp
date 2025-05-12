@@ -12,16 +12,14 @@
 #include <utility>
 #include <vector>
 
-BatteryStatus::BatteryStatus(sdbusplus::asio::object_server& objectServer,
-                             std::shared_ptr<sdbusplus::asio::connection>& conn,
-                             boost::asio::io_context& io,
-                             const std::string& sensorName,
-                             const std::string& deviceName,
-                             const std::string& sensorConfiguration) :
+BatteryStatus::BatteryStatus(
+    sdbusplus::asio::object_server& objectServer,
+    std::shared_ptr<sdbusplus::asio::connection>& conn,
+    boost::asio::io_context& io, const std::string& sensorName,
+    const std::string& deviceName, const std::string& sensorConfiguration) :
     Discrete(escapeName(sensorName), sensorConfiguration, conn),
     objServer(objectServer), waitTimer(io), deviceName(deviceName), conn(conn)
 {
-
     sensorInterface = objectServer.add_interface(
         "/xyz/openbmc_project/sensors/battery/" + name,
         "xyz.openbmc_project.Sensor.State");
@@ -29,6 +27,18 @@ BatteryStatus::BatteryStatus(sdbusplus::asio::object_server& objectServer,
     association = objectServer.add_interface(
         "/xyz/openbmc_project/sensors/battery/" + name, association::interface);
     setInitialProperties();
+
+    if (!sensorInterface || !association)
+    {
+        std::cerr << "Error: Failed to create DBus interfaces\n";
+        return;
+    }
+
+    if (!sensorInterface->initialize() || !association->initialize())
+    {
+        std::cerr << "Error: Failed to initialize DBus interfaces\n";
+        return;
+    }
 }
 
 BatteryStatus::~BatteryStatus()
@@ -39,13 +49,11 @@ BatteryStatus::~BatteryStatus()
 
 void BatteryStatus::setupRead(void)
 {
-
     monitorState();
 }
 
 void BatteryStatus::monitorState()
 {
-
     int8_t reading = monitorThreshold(deviceName, sensorObjectPath);
     uint16_t state = 0;
     if (reading != -1)
@@ -56,8 +64,8 @@ void BatteryStatus::monitorState()
         }
         if (reading & (1 << static_cast<int8_t>(IPMIThresholds::criticalLow)))
         {
-            state =
-                state | (1 << static_cast<uint16_t>(battery::batteryFailed));
+            state = state |
+                    (1 << static_cast<uint16_t>(battery::batteryFailed));
         }
         state = state | (1 << static_cast<uint16_t>(battery::batteryPresence));
     }
