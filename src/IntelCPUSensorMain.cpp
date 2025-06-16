@@ -130,7 +130,7 @@ static constexpr auto hiddenProps{std::to_array<const char*>(
 static const boost::container::flat_map<std::string, SensorProperties>
     sensorPropertiesMap = {
         {"power",
-         {"/xyz/openbmc_project/sensors/power/", sensor_paths::unitWatts, 4500,
+         {"/xyz/openbmc_project/sensors/power/", sensor_paths::unitWatts, 511,
           0, 1000}},
         {"energy",
          {"/xyz/openbmc_project/sensors/energy/", sensor_paths::unitJoules,
@@ -138,6 +138,12 @@ static const boost::container::flat_map<std::string, SensorProperties>
         {"temp",
          {"/xyz/openbmc_project/sensors/temperature/",
           sensor_paths::unitDegreesC, 127.0, -128.0, 1000}}};
+
+static const boost::container::flat_map<std::string, SensorProperties>
+    sensorPropertiesMapPlat = {
+        {"power",
+         {"/xyz/openbmc_project/sensors/power/", sensor_paths::unitWatts, 1600,
+          0, 1000}}};
 
 void detectCpuAsync(
     boost::asio::steady_timer& pingTimer, const size_t pingSeconds,
@@ -422,7 +428,31 @@ bool createSensors(boost::asio::io_context& io,
                     << type << "\n";
                 continue;
             }
-            const SensorProperties& prop = it->second;
+
+	    const auto& it_plt = sensorPropertiesMapPlat.find(type);
+	    if (it_plt == sensorPropertiesMapPlat.end())
+            {
+               std::cerr
+                    << "Failure getting sensor properties for sensor type: "
+                    << type << "\n";
+            }
+
+	    const std::string platform_label = "platform";
+	    int plat_flag=0;
+	    if(type == "power")
+	    {
+		if(label.substr(0, platform_label.length()) == platform_label)
+		{
+			plat_flag=1;
+		}
+	    }
+
+	    if (label.empty()) 
+	    {
+		continue;
+	    }
+
+	    const SensorProperties& prop = (plat_flag) ? it_plt->second : it->second;
 
             std::vector<thresholds::Threshold> sensorThresholds;
             std::string labelHead = label.substr(0, label.find(' '));
