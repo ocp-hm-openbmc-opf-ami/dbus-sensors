@@ -186,7 +186,7 @@ int main()
                               sensorsChanged);
             });
         };
-    const constexpr char* log = "/xyz/openbmc_project/logging/entry";
+    const constexpr char* log = "/xyz/openbmc_project/logging/ipmi";
 
     auto match = std::make_unique<sdbusplus::bus::match::match>(
         static_cast<sdbusplus::bus::bus&>(*systemBus),

@@ -96,7 +96,7 @@ void EventStatus::setupRead(std::shared_ptr<sdbusplus::asio::connection>& conn)
         "xyz.openbmc_project.ObjectMapper",
         "/xyz/openbmc_project/object_mapper",
         "xyz.openbmc_project.ObjectMapper", "GetSubTreePaths");
-    mapperCall.append("/xyz/openbmc_project/logging/entry");
+    mapperCall.append("/xyz/openbmc_project/logging/ipmi");
     mapperCall.append(2);
     mapperCall.append(
         std::vector<std::string>({"xyz.openbmc_project.Logging.Entry"}));
