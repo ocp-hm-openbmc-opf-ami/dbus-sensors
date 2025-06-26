@@ -20,6 +20,7 @@ option('system', type: 'feature', value: 'disabled', description: 'Enable system
 option('acpisystem', type: 'feature', value: 'disabled', description: 'Enable acpi system status sensor.',)
 option('psustatus', type: 'feature', value: 'disabled', description: 'Enable PSU Status sensor.',)
 option('osstatus', type: 'feature', value: 'disabled', description: 'Enable OS Critical sensor.',)
+option('logstatus', type: 'feature', value: 'disabled', description: 'Enable Event Logging sensor.',)
 option('batterystatus', type: 'feature', value: 'disabled', description: 'Enable Battery sensor.',)
 option('acpidevice', type: 'feature', value: 'disabled', description: 'Enable acpi device status sensor.',)
 option('bmc-firmware-health', type: 'feature', value: 'disabled', description: 'Enable Management Subsystem Health sensor.',)

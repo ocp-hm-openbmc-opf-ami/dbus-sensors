@@ -28,6 +28,7 @@ unit_files = [
     ['digital', 'xyz.openbmc_project.digitaldiscrete.service'],
     ['bmc-firmware-health', 'xyz.openbmc_project.bmcfirmwarehealth.service'],
     ['damaged-sensor', 'xyz.openbmc_project.damagedsensor.service'],
+    ['logstatus', 'xyz.openbmc_project.logstatus.service'],
 ]
 
 fs = import('fs')

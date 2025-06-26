@@ -28,6 +28,18 @@ BMCFirmwareHealth::BMCFirmwareHealth(
         "/xyz/openbmc_project/sensors/bmcfirmwarehealth/" + name,
         association::interface);
     setInitialProperties();
+
+    if (!sensorInterface || !association)
+    {
+        std::cerr << "Error: Failed to create DBus interfaces\n";
+        return;
+    }
+
+    if (!sensorInterface->initialize() || !association->initialize())
+    {
+        std::cerr << "Error: Failed to initialize DBus interfaces\n";
+        return;
+    }
 }
 
 BMCFirmwareHealth::~BMCFirmwareHealth()
@@ -90,8 +102,8 @@ void BMCFirmwareHealth::monitorState()
             auto findValue = values.find("Value");
             if (findValue != values.end())
             {
-                double value = std::visit(VariantToDoubleVisitor(),
-                                          findValue->second);
+                double value =
+                    std::visit(VariantToDoubleVisitor(), findValue->second);
                 if (std::isnan(value))
                 {
                     state = state |
