@@ -233,10 +233,11 @@ void PSUSensor::handleResponse(const boost::system::error_code& err,
     try
     {
         rawValue = std::stod(bufferRef.data());
-        if (filterZero && rawValue == 0 && value != 0)
+        if (filterZero && rawValue == 0)
         {
-            value = 0;
-            std::cerr << "INFO: Temperature " << name << " ignore first zero\n";
+            std::cerr << "INFO: Skipping zero temperature for " << name << "\n";
+            restartRead();
+            return;
         }
         else
         {
