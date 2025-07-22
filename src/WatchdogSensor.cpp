@@ -19,14 +19,13 @@ WatchdogSensor::WatchdogSensor(
     Discrete(escapeName(sensorName), sensorConfiguration, conn),
     objServer(objectServer)
 {
-   sensorInterface = objectServer.add_interface(
+    sensorInterface = objectServer.add_interface(
         "/xyz/openbmc_project/sensors/watchdog/" + name,
         "xyz.openbmc_project.Sensor.State");
 
     association = objectServer.add_interface(
         "/xyz/openbmc_project/sensors/watchdog/" + name,
         association::interface);
-    std::cout<<"Calling setinitalprocperites\n";
     setInitialProperties();
 
     const std::string objPath = "/xyz/openbmc_project/sensors/watchdog/" + name;
@@ -71,9 +70,9 @@ WatchdogSensor::WatchdogSensor(
         std::string action{*expireAction};
         uint16_t offset;
         auto findEvent = eventType.find(action.c_str());
-        if(findEvent != eventType.end())
+        if (findEvent != eventType.end())
         {
-            offset = static_cast<uint16_t> (findEvent->second);
+            offset = static_cast<uint16_t>(findEvent->second);
             updateState(sensorInterface, static_cast<uint16_t>(1 << offset));
             eventData[0] = static_cast<uint8_t>(offset);
         }
@@ -82,8 +81,14 @@ WatchdogSensor::WatchdogSensor(
         logData.push_back(action);
         logData.push_back(objPath);
         logData.push_back("SensorWatchdog2");
-
-        addSelEntry(conn, logData, eventData, true);
+        auto wdt_nolog = watchdogStatus.find("LogTimeout");
+        if (wdt_nolog != watchdogStatus.end())
+        {
+            if (std::get<bool>(wdt_nolog->second))
+            {
+                addSelEntry(conn, logData, eventData, true);
+            }
+        }
     };
 
     watchdogEventMatcher = std::make_shared<sdbusplus::bus::match::match>(
