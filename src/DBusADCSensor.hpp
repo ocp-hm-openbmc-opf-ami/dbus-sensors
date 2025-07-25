@@ -20,8 +20,7 @@ class BridgeGpio
   public:
     BridgeGpio(const std::string& Name, const int Polarity,
                const float SetupTime) :
-        name(Name),
-        polarity(Polarity),
+        name(Name), polarity(Polarity),
         setupTimeMs(static_cast<unsigned int>(SetupTime * 1000))
     {}
 
@@ -36,11 +35,11 @@ class BridgeGpio
 
         try
         {
-            line.request({"dbusadcsensor",
-                          gpiod::line_request::DIRECTION_OUTPUT,
-                          polarity == gpiod::line::ACTIVE_HIGH
-                              ? 0
-                              : gpiod::line_request::FLAG_ACTIVE_LOW});
+            line.request(
+                {"dbusadcsensor", gpiod::line_request::DIRECTION_OUTPUT,
+                 polarity == gpiod::line::ACTIVE_HIGH
+                     ? 0
+                     : gpiod::line_request::FLAG_ACTIVE_LOW});
         }
         catch (const std::system_error&)
         {
@@ -91,13 +90,12 @@ class DBusADCSensorController :
   public:
     DBusADCSensorController(
         std::shared_ptr<sdbusplus::asio::connection>& DBusConnection,
-        std::string&& Name, std::string&& DBusService,
+        const std::string& Name, std::string&& DBusService,
         std::string&& DBusObjectPath, std::string&& DBusIface,
         const double Vref, const unsigned ResolutionBits) :
-        name(Name),
-        dbusService(DBusService), dbusObjectPath(DBusObjectPath),
+        name(Name), dbusService(DBusService), dbusObjectPath(DBusObjectPath),
         dbusIface(DBusIface), dbusConnection(DBusConnection), vref(Vref),
-        resolutionBits(ResolutionBits){};
+        resolutionBits(ResolutionBits) {};
 
     ~DBusADCSensorController()
     {
@@ -176,18 +174,17 @@ class DBusADCSensor :
     public std::enable_shared_from_this<DBusADCSensor>
 {
   public:
-    DBusADCSensor(sdbusplus::asio::object_server& ObjectServer,
-                  std::shared_ptr<sdbusplus::asio::connection>& DbusConnection,
-                  boost::asio::io_context& Io, const std::string& SensorName,
-                  std::vector<thresholds::Threshold>&& Thresholds,
-                  const std::string& DbusAdcService,
-                  const std::string& DbusAdcObjPath,
-                  const std::string& DbusAdcIface,
-                  const std::string& DbusAdcProperty, const double Vref,
-                  const unsigned ResolutionBits, const double ScaleFactor,
-                  const float PollRate, PowerState ReadState,
-                  const std::string& SensorConfiguration,
-                  std::optional<BridgeGpio>&& BridgeGpio);
+    DBusADCSensor(
+        sdbusplus::asio::object_server& ObjectServer,
+        std::shared_ptr<sdbusplus::asio::connection>& DbusConnection,
+        boost::asio::io_context& Io, const std::string& SensorName,
+        std::vector<thresholds::Threshold>&& Thresholds,
+        const std::string& DbusAdcService, const std::string& DbusAdcObjPath,
+        const std::string& DbusAdcIface, const std::string& DbusAdcProperty,
+        const double Vref, const unsigned ResolutionBits,
+        const double ScaleFactor, const float PollRate, PowerState ReadState,
+        const std::string& SensorConfiguration,
+        std::optional<BridgeGpio>&& BridgeGpio);
     ~DBusADCSensor() override;
     void read();
     void setupRead();
