@@ -131,6 +131,12 @@ bool PSUSensor::isActive()
 void PSUSensor::activate(const std::string& newPath,
                          const std::shared_ptr<I2CDevice>& newI2CDevice)
 {
+    if (isActive())
+    {
+        // Avoid activating an active sensor
+        return;
+    }
+
     path = newPath;
     i2cDevice = newI2CDevice;
     inputDev.open(path, boost::asio::random_access_file::read_only);
@@ -220,7 +226,10 @@ void PSUSensor::handleResponse(const boost::system::error_code& err,
     {
         if (readingStateGood())
         {
-            std::cerr << name << " read failed\n";
+            if (debug)
+            {
+                std::cerr << name << " read failed\n";
+            }
         }
         restartRead();
         return;
@@ -235,7 +244,11 @@ void PSUSensor::handleResponse(const boost::system::error_code& err,
         rawValue = std::stod(bufferRef.data());
         if (filterZero && rawValue == 0)
         {
-            std::cerr << "INFO: Skipping zero temperature for " << name << "\n";
+            if (debug)
+            {
+                std::cerr << "INFO: Skipping zero temperature for " << name
+                          << "\n";
+            }
             restartRead();
             return;
         }
