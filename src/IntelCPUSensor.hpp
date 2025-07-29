@@ -64,7 +64,7 @@ class IntelCPUSensor :
     bool loggedInterfaceDown = false;
     uint8_t minMaxReadCounter{0};
     int fd{};
-    unsigned int scaleFactor;
+    unsigned int scaleFactor=1;
     void handleResponse(const boost::system::error_code& err);
     void checkThresholds(void) override;
     void updateMinMaxValues(void);
