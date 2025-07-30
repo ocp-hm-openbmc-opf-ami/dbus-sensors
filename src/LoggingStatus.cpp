@@ -28,7 +28,30 @@ EventStatus::EventStatus(sdbusplus::asio::object_server& objectServer,
 
     setInitialProperties();
     setupRead(conn);
+    getEntryCount();
     checkState();
+}
+
+void EventStatus::getEntryCount()
+{
+    sdbusplus::bus::bus bus = sdbusplus::bus::new_default();
+    auto methodCall = bus.new_method_call(
+        "xyz.openbmc_project.Settings", "/xyz/openbmc_project/logging/settings",
+        "org.freedesktop.DBus.Properties", "Get");
+
+    methodCall.append("xyz.openbmc_project.Logging.Settings", "ipmiEntryCount");
+    try
+    {
+        auto reply = bus.call(methodCall);
+
+        std::variant<uint16_t> value;
+        reply.read(value);
+        entryCount = std::get<uint16_t>(value);
+    }
+    catch (const sdbusplus::exception_t& e)
+    {
+        std::cerr << "Failed to update ipmiEntryCount " << std::endl;
+    }
 }
 
 void EventStatus::checkState()
@@ -39,12 +62,11 @@ void EventStatus::checkState()
         {
             return static_cast<uint16_t>(logOffset::Cleared);
         }
-        else if ((entryCount >= (maxEntries * 0.7)) &&
-                 (entryCount < (maxEntries - 1)))
+        else if ((entryCount == (maxEntries * 0.7)))
         {
             return static_cast<uint16_t>(logOffset::AlmostFull);
         }
-        else if (entryCount >= (maxEntries - 1))
+        else if (entryCount == (maxEntries - 1))
         {
             return static_cast<uint16_t>(logOffset::Full);
         }
@@ -86,7 +108,10 @@ void EventStatus::decrementCount()
     static boost::asio::steady_timer timer(io);
     timer.expires_after(std::chrono::seconds(1));
     entryCount--;
-    checkState();
+    if (!entryCount)
+    {
+        checkState();
+    }
 }
 
 void EventStatus::setupRead(std::shared_ptr<sdbusplus::asio::connection>& conn)

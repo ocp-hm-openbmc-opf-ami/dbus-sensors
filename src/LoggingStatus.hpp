@@ -61,6 +61,7 @@ class EventStatus :
     void setupRead(std::shared_ptr<sdbusplus::asio::connection>&);
     void decrementCount();
     void incrementCount();
+    void getEntryCount();
     void checkState();
 
   private:

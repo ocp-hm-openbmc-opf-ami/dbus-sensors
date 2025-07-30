@@ -3,6 +3,7 @@ Description=Event logging Sensor
 StopWhenUnneeded=false
 Requires=xyz.openbmc_project.EntityManager.service
 After=xyz.openbmc_project.EntityManager.service
+After=xyz.openbmc_project.Logging.service
 
 [Service]
 Restart=always
