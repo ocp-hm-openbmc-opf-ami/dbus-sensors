@@ -112,7 +112,16 @@ class DBusADCSensorController :
             setPropMessage.append(dbusIface.c_str(), "AdcActive",
                                   std::variant<bool>(true));
 
-            dbusConnection->call(setPropMessage);
+            auto reply = dbusConnection->call(setPropMessage);
+            if (reply.is_method_error())
+            {
+                std::cerr
+                    << "Error: Failed to set AdcDEActive property on D-Bus interface\n";
+                // Optionally, you can throw or handle your own error here
+                // elog<InternalFailure>(); // Uncomment if elog is defined in
+                // your project
+                return false;
+            }
             enabled = true;
         }
         catch (const std::exception& e)
@@ -133,7 +142,16 @@ class DBusADCSensorController :
             setPropMessage.append(dbusIface.c_str(), "AdcActive",
                                   std::variant<bool>(false));
 
-            dbusConnection->call(setPropMessage);
+            auto reply = dbusConnection->call(setPropMessage);
+            if (reply.is_method_error())
+            {
+                std::cerr
+                    << "Error: Failed to set AdcDEActive property on D-Bus interface\n";
+                // Optionally, you can throw or handle your own error here
+                // elog<InternalFailure>(); // Uncomment if elog is defined in
+                // your project
+                return false;
+            }
             enabled = false;
         }
         catch (const std::exception& e)
