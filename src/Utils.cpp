@@ -19,8 +19,8 @@
 #include "dbus-sensor_config.h"
 
 #include "DeviceMgmt.hpp"
-#include "xyz/openbmc_project/Logging/Entry/server.hpp"
 #include "VariantVisitors.hpp"
+#include "xyz/openbmc_project/Logging/Entry/server.hpp"
 
 #include <boost/asio/error.hpp>
 #include <boost/asio/steady_timer.hpp>
@@ -68,6 +68,7 @@ static bool powerStatusOn = false;
 static bool biosHasPost = false;
 static bool manufacturingMode = false;
 static bool chassisStatusOn = false;
+static constexpr bool debug = false;
 
 static std::unique_ptr<sdbusplus::bus::match_t> powerMatch = nullptr;
 static std::unique_ptr<sdbusplus::bus::match_t> postMatch = nullptr;
@@ -86,12 +87,13 @@ void addSelEntry(std::shared_ptr<sdbusplus::asio::connection>& conn,
     stream << std::hex << std::uppercase << std::setfill('0');
     stream << std::setw(2) << static_cast<int>(eventData[0]);
     auto selDataStr = stream.str();
-    std::string redfishId = sensorName + " logged a " + eventName ;
+    std::string redfishId = sensorName + " logged a " + eventName;
 
     // Log SEL event
     auto method = conn->new_method_call(ipmiService, ipmiObjPath, ipmiIntf,
                                         ipmiSelAddMethod);
-    method.append(redfishId, sensorPath, eventData, assert, selBMCGenID, addData);
+    method.append(redfishId, sensorPath, eventData, assert, selBMCGenID,
+                  addData);
     try
     {
         auto reply = conn->call(method);
@@ -382,9 +384,9 @@ bool readingStateGood(const PowerState& powerState)
     return true;
 }
 
-static void
-    getPowerStatus(const std::shared_ptr<sdbusplus::asio::connection>& conn,
-                   size_t retries = 2)
+static void getPowerStatus(
+    const std::shared_ptr<sdbusplus::asio::connection>& conn,
+    size_t retries = 2)
 {
     conn->async_method_call(
         [conn, retries](boost::system::error_code ec,
@@ -415,9 +417,9 @@ static void
         power::interface, power::property);
 }
 
-static void
-    getPostStatus(const std::shared_ptr<sdbusplus::asio::connection>& conn,
-                  size_t retries = 2)
+static void getPostStatus(
+    const std::shared_ptr<sdbusplus::asio::connection>& conn,
+    size_t retries = 2)
 {
     conn->async_method_call(
         [conn, retries](boost::system::error_code ec,
@@ -450,9 +452,9 @@ static void
         post::interface, post::property);
 }
 
-static void
-    getChassisStatus(const std::shared_ptr<sdbusplus::asio::connection>& conn,
-                     size_t retries = 2)
+static void getChassisStatus(
+    const std::shared_ptr<sdbusplus::asio::connection>& conn,
+    size_t retries = 2)
 {
     conn->async_method_call(
         [conn, retries](boost::system::error_code ec,
@@ -757,8 +759,8 @@ std::optional<double> readFile(const std::string& thresholdFile,
     return std::nullopt;
 }
 
-std::optional<std::tuple<std::string, std::string, std::string>>
-    splitFileName(const fs::path& filePath)
+std::optional<std::tuple<std::string, std::string, std::string>> splitFileName(
+    const fs::path& filePath)
 {
     if (filePath.has_filename())
     {
@@ -824,8 +826,11 @@ void setupManufacturingModeMatch(sdbusplus::asio::connection& conn)
                 auto itr = propertyList.find("SpecialMode");
                 if (itr == propertyList.end())
                 {
-                    std::cerr << "error getting  SpecialMode property "
-                              << "\n";
+                    if (debug)
+                    {
+                        std::cerr << "error getting  SpecialMode property "
+                                  << "\n";
+                    }
                     return;
                 }
                 auto* manufacturingModeStatus =
@@ -861,8 +866,11 @@ void setupManufacturingModeMatch(sdbusplus::asio::connection& conn)
            const std::variant<std::string>& getManufactMode) {
             if (ec)
             {
-                std::cerr << "error getting  SpecialMode status "
-                          << ec.message() << "\n";
+                if (debug)
+                {
+                    std::cerr << "error getting  SpecialMode status "
+                              << ec.message() << "\n";
+                }
                 return;
             }
             const auto* manufacturingModeStatus =

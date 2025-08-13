@@ -83,6 +83,7 @@ boost::container::flat_map<std::string,
             sensors,
         const I2CDeviceTypeMap& sensorTypes)
 {
+    constexpr bool debugEnabled = false;
     boost::container::flat_map<std::string,
                                std::pair<std::shared_ptr<I2CDevice>, bool>>
         devices;
@@ -143,8 +144,11 @@ boost::container::flat_map<std::string,
                 // ensure that we end up with a fresh instance of it.
                 if (params->devicePresent())
                 {
-                    std::cerr << "Clearing out previous instance for "
-                              << path.str << "\n";
+                    if (debugEnabled)
+                    {
+                        std::cerr << "Clearing out previous instance for "
+                                  << path.str << "\n";
+                    }
                     I2CDevice tmp(*params);
                 }
 
@@ -157,9 +161,13 @@ boost::container::flat_map<std::string,
                 }
                 catch (std::runtime_error&)
                 {
-                    std::cerr << "Failed to instantiate " << params->type->name
-                              << " at address " << params->address << " on bus "
-                              << params->bus << "\n";
+                    if (debugEnabled)
+                    {
+                        std::cerr
+                            << "Failed to instantiate " << params->type->name
+                            << " at address " << params->address << " on bus "
+                            << params->bus << "\n";
+                    }
                 }
             }
         }

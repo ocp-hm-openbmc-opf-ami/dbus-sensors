@@ -18,8 +18,6 @@
 
 #include "SensorPaths.hpp"
 #include "Thresholds.hpp"
-#include "SensorPaths.hpp"
-#include "Thresholds.hpp"
 #include "Utils.hpp"
 #include "sensor.hpp"
 
@@ -171,70 +169,70 @@ IntelCPUSensor::~IntelCPUSensor()
         {
             try
             {
-		objServer.remove_interface(iface);
-	    }
-	    catch (const boost::system::system_error& e)
+                objServer.remove_interface(iface);
+            }
+            catch (const boost::system::system_error& e)
             {
-		// Handle the error gracefully without throwing
-		std::cerr << "Caught exception: " << e.what() << std::endl;
-	    }
+                // Handle the error gracefully without throwing
+                std::cerr << "Caught exception: " << e.what() << std::endl;
+            }
             catch (...)
-	    {
-		std::cerr << "Unknown exception caught" << std::endl;
-	    }
+            {
+                std::cerr << "Unknown exception caught" << std::endl;
+            }
         }
 
-	try
-        {
-                objServer.remove_interface(sensorInterface);
-        }
-	catch (const boost::system::system_error& e)
-	{
-        // Handle the error gracefully without throwing
-                std::cerr << "Caught exception: " << e.what() << std::endl;
-        }
-        catch (...)
-        {
-                std::cerr << "Unknown exception caught" << std::endl;
-        }
         try
         {
-                objServer.remove_interface(association);
+            objServer.remove_interface(sensorInterface);
         }
         catch (const boost::system::system_error& e)
         {
-        // Handle the error gracefully without throwing
-                std::cerr << "Caught exception: " << e.what() << std::endl;
+            // Handle the error gracefully without throwing
+            std::cerr << "Caught exception: " << e.what() << std::endl;
         }
         catch (...)
         {
-                std::cerr << "Unknown exception caught" << std::endl;
+            std::cerr << "Unknown exception caught" << std::endl;
         }
         try
         {
-                objServer.remove_interface(availableInterface);
+            objServer.remove_interface(association);
         }
         catch (const boost::system::system_error& e)
         {
-        // Handle the error gracefully without throwing
-                std::cerr << "Caught exception: " << e.what() << std::endl;
+            // Handle the error gracefully without throwing
+            std::cerr << "Caught exception: " << e.what() << std::endl;
         }
         catch (...)
         {
-                std::cerr << "Unknown exception caught" << std::endl;
+            std::cerr << "Unknown exception caught" << std::endl;
         }
         try
         {
-                objServer.remove_interface(operationalInterface);
+            objServer.remove_interface(availableInterface);
         }
         catch (const boost::system::system_error& e)
         {
-        // Handle the error gracefully without throwing
-                  std::cerr << "Caught exception: " << e.what() << std::endl;
+            // Handle the error gracefully without throwing
+            std::cerr << "Caught exception: " << e.what() << std::endl;
         }
         catch (...)
         {
-                std::cerr << "Unknown exception caught" << std::endl;
+            std::cerr << "Unknown exception caught" << std::endl;
+        }
+        try
+        {
+            objServer.remove_interface(operationalInterface);
+        }
+        catch (const boost::system::system_error& e)
+        {
+            // Handle the error gracefully without throwing
+            std::cerr << "Caught exception: " << e.what() << std::endl;
+        }
+        catch (...)
+        {
+            std::cerr << "Unknown exception caught" << std::endl;
         }
     }
 }
@@ -400,8 +398,8 @@ void IntelCPUSensor::handleResponse(const boost::system::error_code& err)
                 // Note: current thresholds can be empty if hwmon attr was not
                 // ready when sensor was first created
                 std::vector<thresholds::Threshold> newThresholds;
-                if (parseThresholdsFromAttr_CPU(newThresholds, path, scaleFactor,
-                                            dtsOffset))
+                if (parseThresholdsFromAttr_CPU(newThresholds, path,
+                                                scaleFactor, dtsOffset))
                 {
                     if (!std::equal(thresholds.begin(), thresholds.end(),
                                     newThresholds.begin(), newThresholds.end()))
@@ -414,9 +412,9 @@ void IntelCPUSensor::handleResponse(const boost::system::error_code& err)
                                 thresholds::updateThresholds(this);
                             }
                         }
-                        std::cout << name << ": Tcontrol changed from "
-                                  << privTcontrol << " to " << gTcontrol
-                                  << "\n";
+                        std::cout
+                            << name << ": Tcontrol changed from "
+                            << privTcontrol << " to " << gTcontrol << "\n";
                         for (auto& threshold : thresholds)
                         {
                             std::cout << name << ": new threshold value "
@@ -424,10 +422,10 @@ void IntelCPUSensor::handleResponse(const boost::system::error_code& err)
                         }
                     }
                 }
-		else
+                else
                 {
-                    std::cerr << "Failure to update thresholds for " << name
-                              << "\n";
+                    std::cerr
+                        << "Failure to update thresholds for " << name << "\n";
                 }
                 privTcontrol = gTcontrol;
             }

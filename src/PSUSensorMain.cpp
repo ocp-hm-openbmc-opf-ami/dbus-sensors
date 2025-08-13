@@ -20,9 +20,6 @@
 #include "PwmSensor.hpp"
 #include "SensorPaths.hpp"
 #include "Thresholds.hpp"
-#include "PwmSensor.hpp"
-#include "SensorPaths.hpp"
-#include "Thresholds.hpp"
 #include "Utils.hpp"
 #include "VariantVisitors.hpp"
 
@@ -291,18 +288,18 @@ static void checkPWMSensor(
         pwmSensors[psuName + labelHead] = std::make_unique<PwmSensor>(
             name, pwmPathStr, dbusConnection, objectServer, objPath, "PSU");
         return;
-        }
+    }
 
-        const std::string& sensorPathStr = sensorPath.string();
-        const std::string& rpmPathStr =
-            boost::replace_all_copy(sensorPathStr, "input", "target");
-        std::ifstream rpmFile(rpmPathStr);
-        if (rpmFile.good())
-        {
-            pwmSensors[psuName + labelHead] = std::make_unique<PwmSensor>(
-                name, rpmPathStr, dbusConnection, objectServer, objPath, "PSU");
-            return;
-        }
+    const std::string& sensorPathStr = sensorPath.string();
+    const std::string& rpmPathStr =
+        boost::replace_all_copy(sensorPathStr, "input", "target");
+    std::ifstream rpmFile(rpmPathStr);
+    if (rpmFile.good())
+    {
+        pwmSensors[psuName + labelHead] = std::make_unique<PwmSensor>(
+            name, rpmPathStr, dbusConnection, objectServer, objPath, "PSU");
+        return;
+    }
 }
 
 static void createSensorsCallback(
@@ -348,8 +345,11 @@ static void createSensorsCallback(
         {
             // To avoid this error message, add your driver name to
             // the pmbusNames vector at the top of this file.
-            std::cerr << "Driver name " << pmbusName
-                      << " not found in sensor whitelist\n";
+            if constexpr (debug)
+            {
+                std::cerr << "Driver name " << pmbusName
+                          << " not found in sensor whitelist\n";
+            }
             continue;
         }
 
@@ -859,11 +859,10 @@ static void createSensorsCallback(
                 }
             }
 
-                if (sensorType == "pmbus")
-                {
-                    checkEventLimits(sensorPathStr, limitEventMatch,
-                                     eventPathList);
-                }
+            if (sensorType == "pmbus")
+            {
+                checkEventLimits(sensorPathStr, limitEventMatch, eventPathList);
+            }
 
             // Similarly, if sensor scaling factor is being customized,
             // then the below power-of-10 constraint becomes unnecessary,
@@ -1002,8 +1001,8 @@ static void createSensorsCallback(
     }
 }
 
-static void
-    getPresentCpus(std::shared_ptr<sdbusplus::asio::connection>& dbusConnection)
+static void getPresentCpus(
+    std::shared_ptr<sdbusplus::asio::connection>& dbusConnection)
 {
     static const int depth = 2;
     static const int numKeys = 1;
@@ -1021,8 +1020,11 @@ static void
     }
     catch (sdbusplus::exception_t& e)
     {
-        std::cerr << "error getting inventory item subtree: " << e.what()
-                  << "\n";
+        if constexpr (debug)
+        {
+            std::cerr << "error getting inventory item subtree: " << e.what()
+                      << "\n";
+        }
         return;
     }
 

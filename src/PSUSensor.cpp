@@ -213,13 +213,19 @@ void PSUSensor::handleResponse(const boost::system::error_code& err,
 {
     if (err == boost::asio::error::operation_aborted)
     {
-        std::cerr << "Read aborted\n";
+        if (debug)
+        {
+            std::cerr << "Read aborted\n";
+        }
         return;
     }
     if ((err == boost::system::errc::bad_file_descriptor) ||
         (err == boost::asio::error::misc_errors::not_found))
     {
-        std::cerr << "Bad file descriptor for " << path << "\n";
+        if (debug)
+        {
+            std::cerr << "Bad file descriptor for " << path << "\n";
+        }
         return;
     }
     if (err || bytesRead == 0)
