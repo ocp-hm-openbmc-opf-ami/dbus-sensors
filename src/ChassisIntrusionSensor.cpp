@@ -28,6 +28,7 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
 #include <gpiod.hpp>
+#include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 
 #include <chrono>
@@ -333,15 +334,51 @@ int ChassisIntrusionSensor::setSensorValue(const std::string& req,
     // Send intrusion event to Redfish
     if (mValue == normalValStr && propertyValue != normalValStr)
     {
-        sd_journal_send("MESSAGE=%s", "Chassis intrusion assert event",
-                        "PRIORITY=%i", LOG_INFO, "REDFISH_MESSAGE_ID=%s",
-                        "OpenBMC.0.1.ChassisIntrusionDetected", NULL);
+        std::string severity =
+            "xyz.openbmc_project.Logging.Entry.Level.Warning";
+        auto bus = sdbusplus::bus::new_default_system();
+        sdbusplus::message::message m = bus.new_method_call(
+            "xyz.openbmc_project.Logging", "/xyz/openbmc_project/logging",
+            "xyz.openbmc_project.Logging.Create", "Create");
+        std::string journalMsg = "OpenBMC.0.1.ChassisIntrusionDetected";
+
+        std::map<std::string, std::string> additionalData;
+        additionalData["REDFISH_MESSAGE_ID"] =
+            "OpenBMC.0.1.ChassisIntrusionDetected";
+        m.append(journalMsg, severity, additionalData);
+        try
+        {
+            bus.call(m);
+        }
+        catch (const sdbusplus::exception_t& e)
+        {
+            lg2::error("Failed to create log entry: {ERROR}", "ERROR",
+                       e.what());
+        }
     }
     else if (mValue == hwIntrusionValStr && propertyValue == normalValStr)
     {
-        sd_journal_send("MESSAGE=%s", "Chassis intrusion de-assert event",
-                        "PRIORITY=%i", LOG_INFO, "REDFISH_MESSAGE_ID=%s",
-                        "OpenBMC.0.1.ChassisIntrusionReset", NULL);
+        std::string severity =
+            "xyz.openbmc_project.Logging.Entry.Level.Informational";
+        auto bus = sdbusplus::bus::new_default_system();
+        sdbusplus::message::message m = bus.new_method_call(
+            "xyz.openbmc_project.Logging", "/xyz/openbmc_project/logging",
+            "xyz.openbmc_project.Logging.Create", "Create");
+        std::string journalMsg = "OpenBMC.0.1.ChassisIntrusionReset";
+
+        std::map<std::string, std::string> additionalData;
+        additionalData["REDFISH_MESSAGE_ID"] =
+            "OpenBMC.0.1.ChassisIntrusionReset";
+        m.append(journalMsg, severity, additionalData);
+        try
+        {
+            bus.call(m);
+        }
+        catch (const sdbusplus::exception_t& e)
+        {
+            lg2::error("Failed to create log entry: {ERROR}", "ERROR",
+                       e.what());
+        }
     }
     return 1;
 }
