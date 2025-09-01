@@ -24,11 +24,9 @@
 #include <peci.h>
 
 #include <boost/algorithm/string/replace.hpp>
-#include <boost/asio/posix/stream_descriptor.hpp>
-#include <peci.h>
-
 #include <boost/asio/error.hpp>
 #include <boost/asio/io_context.hpp>
+#include <boost/asio/posix/stream_descriptor.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/container/flat_map.hpp>
 #include <boost/container/flat_set.hpp>
@@ -100,8 +98,7 @@ struct CPUConfig
     CPUConfig(const uint64_t& bus, const uint64_t& addr,
               const std::string& name, const std::string& busName,
               const State& state) :
-        bus(bus),
-        addr(addr), name(name), busName(busName), state(state)
+        bus(bus), addr(addr), name(name), busName(busName), state(state)
     {}
     int bus;
     int addr;
@@ -139,11 +136,12 @@ static const boost::container::flat_map<std::string, SensorProperties>
          {"/xyz/openbmc_project/sensors/temperature/",
           sensor_paths::unitDegreesC, 127.0, -128.0, 1000}}};
 
-static const boost::container::flat_map<std::string, SensorProperties>
+static boost::container::flat_map<std::string, SensorProperties>
     sensorPropertiesMapPlat = {
         {"power",
-         {"/xyz/openbmc_project/sensors/power/", sensor_paths::unitWatts, 1600,
-          0, 1000}}};
+         {"/xyz/openbmc_project/sensors/power/", sensor_paths::unitWatts,
+          1600 /*will assign value as per PSU power ratting dynamically*/, 0,
+          1000}}};
 
 void detectCpuAsync(
     boost::asio::steady_timer& pingTimer, const size_t pingSeconds,
@@ -242,6 +240,13 @@ bool createSensors(boost::asio::io_context& io,
 
     boost::container::flat_set<std::string> scannedDirectories;
     boost::container::flat_set<std::string> createdSensors;
+
+    thresholds::PSUData psu = thresholds::read_psu_max_power();
+
+    if (psu.max_power != 0)
+    {
+        sensorPropertiesMapPlat["power"].max = psu.max_power;
+    }
 
     for (const fs::path& hwmonNamePath : hwmonNamePaths)
     {
@@ -381,16 +386,16 @@ bool createSensors(boost::asio::io_context& io,
             auto findSensor = gCpuSensors.find(sensorName);
             if (findSensor != gCpuSensors.end())
             {
-		if(label != "DTS")
-		{
-			if (debug)
-			{
-				std::cout << "Will be replaced: " << inputPath << ": "
-					<< sensorName << " is already created\n";
-			}
+                if (label != "DTS")
+                {
+                    if (debug)
+                    {
+                        std::cout << "Will be replaced: " << inputPath << ": "
+                                  << sensorName << " is already created\n";
+                    }
 
-			continue;
-		}
+                    continue;
+                }
             }
 
             // check hidden properties
@@ -429,30 +434,31 @@ bool createSensors(boost::asio::io_context& io,
                 continue;
             }
 
-	    const auto& it_plt = sensorPropertiesMapPlat.find(type);
-	    if (it_plt == sensorPropertiesMapPlat.end())
+            const auto& it_plt = sensorPropertiesMapPlat.find(type);
+            if (it_plt == sensorPropertiesMapPlat.end())
             {
-               std::cerr
+                std::cerr
                     << "Failure getting sensor properties for sensor type: "
                     << type << "\n";
             }
 
-	    const std::string platform_label = "platform";
-	    int plat_flag=0;
-	    if(type == "power")
-	    {
-		if(label.substr(0, platform_label.length()) == platform_label)
-		{
-			plat_flag=1;
-		}
-	    }
+            const std::string platform_label = "platform";
+            int plat_flag = 0;
+            if (type == "power")
+            {
+                if (label.substr(0, platform_label.length()) == platform_label)
+                {
+                    plat_flag = 1;
+                }
+            }
 
-	    if (label.empty()) 
-	    {
-		continue;
-	    }
+            if (label.empty())
+            {
+                continue;
+            }
 
-	    const SensorProperties& prop = (plat_flag) ? it_plt->second : it->second;
+            const SensorProperties& prop =
+                (plat_flag) ? it_plt->second : it->second;
 
             std::vector<thresholds::Threshold> sensorThresholds;
             std::string labelHead = label.substr(0, label.find(' '));
@@ -460,8 +466,8 @@ bool createSensors(boost::asio::io_context& io,
                                       &labelHead);
             if (sensorThresholds.empty())
             {
-                if (!parseThresholdsFromAttr(sensorThresholds, inputPathStr,
-                                             prop.scaleFactor, dtsOffset))
+                if (!parseThresholdsFromAttr_CPU(sensorThresholds, inputPathStr,
+                                                 prop.scaleFactor, dtsOffset))
                 {
                     std::cerr << "error populating thresholds for "
                               << sensorName << "\n";
@@ -712,8 +718,8 @@ void detectCpu(boost::asio::steady_timer& pingTimer,
 
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
                 if (peci_RdPkgConfig(config.addr, PECI_MBX_INDEX_DDR_DIMM_TEMP,
-                                     rank, 4, pkgConfig.data(),
-                                     &cc) == PECI_CC_SUCCESS)
+                                     rank, 4, pkgConfig.data(), &cc) ==
+                    PECI_CC_SUCCESS)
                 {
                     // Depending on CPU generation, both 0 and 0xFF can be used
                     // to indicate no DIMM presence
@@ -752,8 +758,8 @@ void detectCpu(boost::asio::steady_timer& pingTimer,
                     uint8_t cc = 0;
 
                     if (peci_RdPkgConfig(config.addr, PECI_MBX_INDEX_CPU_ID, 0,
-                                         4, pkgConfig.data(),
-                                         &cc) == PECI_CC_SUCCESS)
+                                         4, pkgConfig.data(), &cc) ==
+                        PECI_CC_SUCCESS)
                     {
                         std::cout << config.name << " is detected\n";
                         if (!exportDevice(config))
@@ -868,8 +874,8 @@ std::optional<uint64_t> getPeciDeviceNum(const fs::path& peciAdapterNamePath)
     }
 }
 
-std::optional<std::string>
-    readPeciAdapterNameFromFile(const fs::path& peciAdapterNamePath)
+std::optional<std::string> readPeciAdapterNameFromFile(
+    const fs::path& peciAdapterNamePath)
 {
     std::ifstream nameFile(peciAdapterNamePath);
     if (!nameFile.good())
@@ -1200,51 +1206,26 @@ void udevAsync(boost::asio::posix::stream_descriptor& udevDescriptor,
 
 int main()
 {
-    boost::asio::io_context io;
-    auto systemBus = std::make_shared<sdbusplus::asio::connection>(io);
-    boost::container::flat_set<CPUConfig> cpuConfigs;
+    try
+    {
+        boost::asio::io_context io;
+        auto systemBus = std::make_shared<sdbusplus::asio::connection>(io);
+        boost::container::flat_set<CPUConfig> cpuConfigs;
 
-    sdbusplus::asio::object_server objectServer(systemBus, true);
-    objectServer.add_manager("/xyz/openbmc_project/sensors");
-    boost::asio::steady_timer pingTimer(io);
-    boost::asio::steady_timer creationTimer(io);
-    boost::asio::steady_timer filterTimer(io);
-    waitTimer = std::make_unique<boost::asio::steady_timer>(io);
-    ManagedObjectType sensorConfigs;
+        sdbusplus::asio::object_server objectServer(systemBus, true);
+        objectServer.add_manager("/xyz/openbmc_project/sensors");
+        boost::asio::steady_timer pingTimer(io);
+        boost::asio::steady_timer creationTimer(io);
+        boost::asio::steady_timer filterTimer(io);
+        waitTimer = std::make_unique<boost::asio::steady_timer>(io);
+        ManagedObjectType sensorConfigs;
 
-    udev* udevContext;
-    udev_monitor* umonitor;
-    boost::asio::posix::stream_descriptor udevDescriptor(io);
+        udev* udevContext = nullptr;
+        udev_monitor* umonitor = nullptr;
+        boost::asio::posix::stream_descriptor udevDescriptor(io);
 
-    filterTimer.expires_after(std::chrono::seconds(1));
-    filterTimer.async_wait([&](const boost::system::error_code& ec) {
-        if (ec == boost::asio::error::operation_aborted)
+        try
         {
-            return; // we're being canceled
-        }
-
-        if (getCpuConfig(systemBus, cpuConfigs, sensorConfigs, io,
-                         objectServer))
-        {
-            detectCpuAsync(pingTimer, fastPingSeconds, creationTimer, io,
-                           objectServer, systemBus, cpuConfigs, sensorConfigs);
-        }
-    });
-
-    std::function<void(sdbusplus::message_t&)> eventHandler =
-        [&](sdbusplus::message_t& message) {
-            if (message.is_method_error())
-            {
-                std::cerr << "callback method error\n";
-                return;
-            }
-
-            if (debug)
-            {
-                std::cout << message.get_path() << " is changed\n";
-            }
-
-            // this implicitly cancels the timer
             filterTimer.expires_after(std::chrono::seconds(1));
             filterTimer.async_wait([&](const boost::system::error_code& ec) {
                 if (ec == boost::asio::error::operation_aborted)
@@ -1252,40 +1233,159 @@ int main()
                     return; // we're being canceled
                 }
 
-            if (getCpuConfig(systemBus, cpuConfigs, sensorConfigs, io,
-                             objectServer))
+                if (getCpuConfig(systemBus, cpuConfigs, sensorConfigs, io,
+                                 objectServer))
+                {
+                    detectCpuAsync(pingTimer, fastPingSeconds, creationTimer,
+                                   io, objectServer, systemBus, cpuConfigs,
+                                   sensorConfigs);
+                }
+            });
+
+            std::function<void(sdbusplus::message_t&)> eventHandler =
+                [&](sdbusplus::message_t& message) {
+                    try
+                    {
+                        if (message.is_method_error())
+                        {
+                            std::cerr << "callback method error\n";
+                            return;
+                        }
+
+                        if (debug)
+                        {
+                            std::cout << message.get_path() << " is changed\n";
+                        }
+
+                        // this implicitly cancels the timer
+                        filterTimer.expires_after(std::chrono::seconds(1));
+                        filterTimer.async_wait(
+                            [&](const boost::system::error_code& ec) {
+                                if (ec == boost::asio::error::operation_aborted)
+                                {
+                                    return; // we're being canceled
+                                }
+
+                                if (getCpuConfig(systemBus, cpuConfigs,
+                                                 sensorConfigs, io,
+                                                 objectServer))
+                                {
+                                    detectCpuAsync(pingTimer, fastPingSeconds,
+                                                   creationTimer, io,
+                                                   objectServer, systemBus,
+                                                   cpuConfigs, sensorConfigs);
+                                }
+                            });
+                    }
+                    catch (const std::exception& e)
+                    {
+                        std::cerr << "Exception in eventHandler: " << e.what()
+                                  << "\n";
+                    }
+                };
+
+            udevContext = udev_new();
+            if (!udevContext)
             {
-                detectCpuAsync(pingTimer, fastPingSeconds, creationTimer, io,
-                               objectServer, systemBus, cpuConfigs,
-                               sensorConfigs);
+                std::cerr << "can't create udev library context\n";
+                throw std::runtime_error("Failed to create udev context");
             }
-        });
-    };
 
-    udevContext = udev_new();
-    if (!udevContext)
-    {
-        std::cerr << "can't create udev library context\n";
+            umonitor = udev_monitor_new_from_netlink(udevContext, "udev");
+            if (!umonitor)
+            {
+                std::cerr << "can't create udev monitor\n";
+                throw std::runtime_error("Failed to create udev monitor");
+            }
+
+            udev_monitor_filter_add_match_subsystem_devtype(umonitor, "peci",
+                                                            NULL);
+            udev_monitor_enable_receiving(umonitor);
+
+            try
+            {
+                udevDescriptor.assign(udev_monitor_get_fd(umonitor));
+            }
+            catch (const boost::system::system_error& e)
+            {
+                std::cerr << "Failed to assign udev descriptor: " << e.what()
+                          << "\n";
+                throw std::runtime_error("Failed to assign udev descriptor");
+            }
+
+            udevAsync(udevDescriptor, umonitor, cpuConfigs);
+
+            std::vector<std::unique_ptr<sdbusplus::bus::match_t>> matches =
+                setupPropertiesChangedMatches(*systemBus, sensorTypes,
+                                              eventHandler);
+
+            systemBus->request_name("xyz.openbmc_project.IntelCPUSensor");
+
+            setupManufacturingModeMatch(*systemBus);
+            boost::asio::spawn(io, [](boost::asio::yield_context yield) {
+                try
+                {
+                    pollCPUSensors(yield);
+                }
+                catch (const boost::coroutines::detail::forced_unwind&)
+                {
+                    std::cerr
+                        << "Debug: Main execution coroutine cancelled (normal during shutdown)\n";
+                    throw;
+                }
+                catch (const std::exception& e)
+                {
+                    std::cerr
+                        << "Exception in pollCPUSensors: " << e.what() << "\n";
+                }
+            });
+
+            io.run();
+        }
+        catch (const boost::coroutines::detail::forced_unwind&)
+        {
+            std::cerr
+                << "Debug: Main execution coroutine cancelled (normal during shutdown)\n";
+            throw;
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << "Exception in main execution: " << e.what() << "\n";
+
+            // Cleanup resources
+            if (umonitor)
+            {
+                udev_monitor_unref(umonitor);
+            }
+            if (udevContext)
+            {
+                udev_unref(udevContext);
+            }
+
+            return 1;
+        }
+
+        // Cleanup resources
+        if (umonitor)
+        {
+            udev_monitor_unref(umonitor);
+        }
+        if (udevContext)
+        {
+            udev_unref(udevContext);
+        }
+
+        return 0;
     }
-    umonitor = udev_monitor_new_from_netlink(udevContext, "udev");
-    if (!umonitor)
+    catch (const boost::coroutines::detail::forced_unwind&)
     {
-        std::cerr << "can't create udev monitor\n";
+        std::cerr
+            << "Debug: Outer coroutine cancelled (normal during shutdown)\n";
+        return 0;
     }
-    udev_monitor_filter_add_match_subsystem_devtype(umonitor, "peci", NULL);
-    udev_monitor_enable_receiving(umonitor);
-
-    udevDescriptor.assign(udev_monitor_get_fd(umonitor));
-    udevAsync(udevDescriptor, umonitor, cpuConfigs);
-
-    std::vector<std::unique_ptr<sdbusplus::bus::match_t>> matches =
-        setupPropertiesChangedMatches(*systemBus, sensorTypes, eventHandler);
-
-    systemBus->request_name("xyz.openbmc_project.IntelCPUSensor");
-
-    setupManufacturingModeMatch(*systemBus);
-    boost::asio::spawn(
-        io, [](boost::asio::yield_context yield) { pollCPUSensors(yield); });
-    io.run();
-    return 0;
+    catch (const std::exception& e)
+    {
+        std::cerr << "Fatal initialization error: " << e.what() << "\n";
+        return 1;
+    }
 }

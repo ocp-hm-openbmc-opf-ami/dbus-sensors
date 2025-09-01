@@ -61,8 +61,8 @@ void createSensors(
     boost::container::flat_map<
         std::string, std::shared_ptr<DBusADCSensorController>>& controllers);
 
-static void
-    getPresentCpus(std::shared_ptr<sdbusplus::asio::connection>& dbusConnection)
+static void getPresentCpus(
+    std::shared_ptr<sdbusplus::asio::connection>& dbusConnection)
 {
     GetSubTreeType cpuSubTree;
     auto getItems = dbusConnection->new_method_call(
@@ -379,9 +379,10 @@ void createControllers(
         sensorsChanged)
 {
     auto controllerGetter = std::make_shared<GetSensorConfiguration>(
-        dbusConnection, [&io, &dbusConnection, &objectServer, &controllers,
-                         controllersChanged, &sensors, sensorsChanged](
-                            const ManagedObjectType& controllerConfigurations) {
+        dbusConnection,
+        [&io, &dbusConnection, &objectServer, &controllers, controllersChanged,
+         &sensors,
+         sensorsChanged](const ManagedObjectType& controllerConfigurations) {
             bool anyControllerChanged = false;
 
             for (const auto& [objPath, data] : controllerConfigurations)
@@ -473,7 +474,7 @@ void createControllers(
                 controllers[name] = nullptr;
 
                 auto controller = std::make_shared<DBusADCSensorController>(
-                    dbusConnection, std::move(name), std::move(dbusService),
+                    dbusConnection, name, std::move(dbusService),
                     std::move(dbusPath), std::move(dbusIface), vref,
                     resolution);
 

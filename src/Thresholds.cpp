@@ -17,6 +17,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -29,6 +30,95 @@
 static constexpr bool debug = false;
 namespace thresholds
 {
+
+namespace fs = std::filesystem;
+
+static std::string format_i2c_address(int addr)
+{
+    std::ostringstream ss;
+    ss << std::setw(4) << std::setfill('0') << std::hex << addr;
+    return ss.str();
+}
+
+static std::string find_psu_hwmon_path()
+{
+    std::string i2c_path = "";
+
+    const std::string i2c_path1 =
+        "/sys/bus/i2c/devices/" + std::to_string(PSU_BUS) + "-" +
+        format_i2c_address(PSU_ADDR1) + "/hwmon";
+
+    const std::string i2c_path2 =
+        "/sys/bus/i2c/devices/" + std::to_string(PSU_BUS) + "-" +
+        format_i2c_address(PSU_ADDR2) + "/hwmon";
+
+    const std::string i2c_path3 =
+        "/sys/bus/i2c/devices/" + std::to_string(PSU_BUS) + "-" +
+        format_i2c_address(PSU_ADDR3) + "/hwmon";
+
+    if (fs::exists(i2c_path1))
+    {
+        i2c_path = i2c_path1;
+    }
+    else if (fs::exists(i2c_path2))
+    {
+        i2c_path = i2c_path2;
+    }
+    else if (fs::exists(i2c_path3))
+    {
+        i2c_path = i2c_path3;
+    }
+    else
+    {
+        std::cerr << "PSU device not found\n";
+        return "";
+    }
+
+    for (const auto& entry : fs::directory_iterator(i2c_path))
+    {
+        if (entry.path().filename().string().find("hwmon") == 0)
+        {
+            return entry.path();
+        }
+    }
+
+    return "";
+}
+
+PSUData read_psu_max_power()
+{
+    PSUData psu;
+
+    psu.max_power = 0;
+
+    std::string hwmon_path = find_psu_hwmon_path();
+    if (hwmon_path.empty())
+    {
+        std::cerr << "Failed to locate PSU hwmon interface\n";
+        return psu;
+    }
+
+    std::ifstream name_file(hwmon_path + "/name");
+    if (!name_file)
+    {
+        std::cerr << "Failed to Open pmbus HWMOM Path\n";
+        return psu;
+    }
+
+    std::ifstream power_file(hwmon_path + "/power1_rated_max");
+    if (!power_file)
+    {
+        std::cerr << "Failed to Read CPU Rated Power Max\n";
+        return psu;
+    }
+
+    power_file >> psu.max_power;
+
+    psu.max_power = (psu.max_power / 1000000);
+
+    return psu;
+}
+
 Level findThresholdLevel(uint8_t sev)
 {
     for (const ThresholdDefinition& prop : thresProp)
@@ -58,9 +148,8 @@ static const std::unordered_map<std::string, std::string> labelToHwmonSuffix = {
     {"iout_oc_warn_limit", "max"},
 };
 
-static std::optional<double>
-    parseThresholdFromLabel(const std::string* sensorPathStr,
-                            const SensorBaseConfigMap& sensorData)
+static std::optional<double> parseThresholdFromLabel(
+    const std::string* sensorPathStr, const SensorBaseConfigMap& sensorData)
 {
     if (sensorPathStr == nullptr)
     {
@@ -571,9 +660,10 @@ bool parseThresholdsFromAttr(
                  std::make_tuple("crit", Level::CRITICAL, Direction::HIGH,
                                  offset),
              }},
-             {"cap",
+            {"cap",
              {
-                 std::make_tuple("cap_max", Level::WARNING, Direction::HIGH, 0.0),
+                 std::make_tuple("cap_max", Level::WARNING, Direction::HIGH,
+                                 0.0),
              }},
         };
 
@@ -585,8 +675,8 @@ bool parseThresholdsFromAttr(
             for (const auto& t : map.at(item))
             {
                 const auto& [suffix, level, direction, offset] = t;
-                auto attrPath = boost::replace_all_copy(inputPath, item,
-                                                        suffix);
+                auto attrPath =
+                    boost::replace_all_copy(inputPath, item, suffix);
                 // create threshold with value NaN if file exists
                 // read can fail because resource is busy
                 // This allows thresholds interfaces created during init
@@ -595,14 +685,118 @@ bool parseThresholdsFromAttr(
                 {
                     *val += offset;
 
-                    std::cout << "Threshold: " << attrPath << ": " << *val
-                              << "\n";
+                    std::cout
+                        << "Threshold: " << attrPath << ": " << *val << "\n";
 
                     thresholdVector.emplace_back(level, direction, *val, 0);
                 }
             }
         }
     }
+    return true;
+}
+
+bool parseThresholdsFromAttr_CPU(
+    std::vector<thresholds::Threshold>& thresholdVector,
+    const std::string& inputPath, const double& scaleFactor,
+    const double& offset)
+{
+    const boost::container::flat_map<
+        std::string, std::vector<std::tuple<const char*, thresholds::Level,
+                                            thresholds::Direction, double>>>
+        map = {
+            {"average",
+             {
+                 std::make_tuple("average_min", Level::WARNING, Direction::LOW,
+                                 0.0),
+                 std::make_tuple("average_max", Level::WARNING, Direction::HIGH,
+                                 0.0),
+             }},
+            {"input",
+             {
+                 std::make_tuple("min", Level::WARNING, Direction::LOW, 0.0),
+                 std::make_tuple("max", Level::WARNING, Direction::HIGH, 0.0),
+                 std::make_tuple("lcrit", Level::CRITICAL, Direction::LOW, 0.0),
+                 std::make_tuple("crit", Level::CRITICAL, Direction::HIGH,
+                                 offset),
+             }},
+            {"cap",
+             {
+                 std::make_tuple("cap_max", Level::WARNING, Direction::HIGH,
+                                 0.0),
+             }},
+        };
+
+    PSUData psu;
+    psu.max_power = 0;
+    int plat_flag = 0;
+
+    if (auto fileParts = splitFileName(inputPath))
+    {
+        auto& [type, nr, item] = *fileParts;
+        if (map.count(item) != 0)
+        {
+            for (const auto& t : map.at(item))
+            {
+                const auto& [suffix, level, direction, offset] = t;
+                auto attrPath =
+                    boost::replace_all_copy(inputPath, item, suffix);
+
+                if (inputPath.find("platformpower") != std::string::npos)
+                {
+                    if (inputPath.find("power1") != std::string::npos)
+                    {
+                        psu.max_power = 0;
+                        psu = read_psu_max_power();
+                        plat_flag = 1;
+                    }
+                }
+                else
+                {
+                    plat_flag = 0;
+                }
+
+                if (plat_flag == 1)
+                {
+                    if (direction == Direction::HIGH)
+                    {
+                        if (psu.max_power == 0)
+                        {
+                            psu.max_power =
+                                std::numeric_limits<int>::quiet_NaN();
+                        }
+
+                        thresholdVector.emplace_back(level, direction,
+                                                     psu.max_power, 0);
+                    }
+                }
+                else
+                {
+                    // create threshold with value NaN if file exists
+                    // read can fail because resource is busy
+                    // This allows thresholds interfaces created during init
+                    // values will be updated when resource is available later.
+                    if (auto val = readFile(attrPath, scaleFactor, true))
+                    {
+                        *val += offset;
+                        std::cout << "Threshold: " << attrPath << ": " << *val
+                                  << "\n";
+
+                        if (direction == Direction::HIGH)
+                        {
+                            if (*val == 0)
+                            {
+                                *val = std::numeric_limits<double>::quiet_NaN();
+                            }
+                        }
+
+                        thresholdVector.emplace_back(level, direction, *val, 0);
+                    }
+                }
+            }
+        }
+    }
+
     return true;
 }
 

@@ -96,8 +96,8 @@ struct SensorConfig
 using SensorConfigMap =
     boost::container::flat_map<SensorConfigKey, SensorConfig>;
 
-static SensorConfigMap
-    buildSensorConfigMap(const ManagedObjectType& sensorConfigs)
+static SensorConfigMap buildSensorConfigMap(
+    const ManagedObjectType& sensorConfigs)
 {
     SensorConfigMap configMap;
     for (const auto& [path, cfgData] : sensorConfigs)
@@ -166,65 +166,86 @@ void createSensors(
         dbusConnection,
         [&io, &objectServer, &sensors, &dbusConnection, sensorsChanged,
          activateOnly](const ManagedObjectType& sensorConfigurations) {
-         [[maybe_unused]] bool firstScan = sensorsChanged == nullptr;
+            [[maybe_unused]] bool firstScan = sensorsChanged == nullptr;
 
-        SensorConfigMap configMap = buildSensorConfigMap(sensorConfigurations);
-        boost::container::flat_map<uint64_t, uint64_t> disabledSensor;
-        disabledSensor = checkSysfsAttributesExist(sensorConfigurations);
+            SensorConfigMap configMap =
+                buildSensorConfigMap(sensorConfigurations);
+            boost::container::flat_map<uint64_t, uint64_t> disabledSensor;
+            disabledSensor = checkSysfsAttributesExist(sensorConfigurations);
 
-        // iterate through all found uninstantiateDevices temp sensors,
-        // and try to match them with configuration
-        for (auto& pair : disabledSensor)
-        {
-            uint64_t bus = pair.first;
-            uint64_t addr = pair.second;
-            auto findSensorCfg = configMap.find({bus, addr});
-            if (findSensorCfg == configMap.end())
+            // iterate through all found uninstantiateDevices temp sensors,
+            // and try to match them with configuration
+            for (auto& pair : disabledSensor)
             {
-                continue;
+                uint64_t bus = pair.first;
+                uint64_t addr = pair.second;
+                auto findSensorCfg = configMap.find({bus, addr});
+                if (findSensorCfg == configMap.end())
+                {
+                    continue;
+                }
+
+                const std::string& interfacePath =
+                    findSensorCfg->second.sensorPath;
+
+                const SensorData& sensorData = findSensorCfg->second.sensorData;
+                std::string sensorType = findSensorCfg->second.interface;
+                auto pos = sensorType.find_last_of('.');
+                if (pos != std::string::npos)
+                {
+                    sensorType = sensorType.substr(pos + 1);
+                }
+                const SensorBaseConfigMap& baseConfigMap =
+                    findSensorCfg->second.config;
+
+                auto findSensorName = baseConfigMap.find("Name");
+
+                int index = 1;
+                if (findSensorName == baseConfigMap.end())
+                {
+                    std::cerr << "could not determine configuration name for "
+                              << "\n";
+                    continue;
+                }
+                std::string sensorName =
+                    std::get<std::string>(findSensorName->second);
+
+                std::vector<thresholds::Threshold> sensorThresholds;
+
+                if (!parseThresholdsFromConfig(sensorData, sensorThresholds,
+                                               nullptr, &index))
+                {
+                    std::cerr << "error populating thresholds for "
+                              << sensorName << " index " << index << "\n";
+                }
+
+                if (sensors.contains(sensorName) && sensors[sensorName])
+                {
+                    std::cerr
+                        << "Sensor already exists, skipping: " << sensorName
+                        << "\n";
+                    continue;
+                }
+
+                auto& sensor = sensors[sensorName];
+                std::optional<std::string> hwmonFile = std::nullopt;
+
+                try
+                {
+                    sensor = std::make_shared<DamagedSensor>(
+                        *hwmonFile, sensorType, objectServer, dbusConnection,
+                        io, sensorName, std::move(sensorThresholds),
+                        interfacePath);
+                    sensor->setupRead();
+                }
+                catch (const std::exception& e)
+                {
+                    std::cerr << "Failed to create sensor '" << sensorName
+                              << "': " << e.what() << std::endl;
+                    continue;
+                }
             }
-
-            const std::string& interfacePath = findSensorCfg->second.sensorPath;
-
-            const SensorData& sensorData = findSensorCfg->second.sensorData;
-            std::string sensorType = findSensorCfg->second.interface;
-            auto pos = sensorType.find_last_of('.');
-            if (pos != std::string::npos)
-            {
-                sensorType = sensorType.substr(pos + 1);
-            }
-            const SensorBaseConfigMap& baseConfigMap =
-                findSensorCfg->second.config;
-
-            auto findSensorName = baseConfigMap.find("Name");
-
-            int index = 1;
-            if (findSensorName == baseConfigMap.end())
-            {
-                std::cerr << "could not determine configuration name for "
-                          << "\n";
-                continue;
-            }
-            std::string sensorName =
-                std::get<std::string>(findSensorName->second);
-
-            std::vector<thresholds::Threshold> sensorThresholds;
-
-            if (!parseThresholdsFromConfig(sensorData, sensorThresholds,
-                                           nullptr, &index))
-            {
-                std::cerr << "error populating thresholds for " << sensorName
-                          << " index " << index << "\n";
-            }
-
-            auto& sensor = sensors[sensorName];
-            std::optional<std::string> hwmonFile = std::nullopt;
-            sensor = std::make_shared<DamagedSensor>(
-                *hwmonFile, sensorType, objectServer, dbusConnection, io,
-                sensorName, std::move(sensorThresholds), interfacePath);
-            sensor->setupRead();
-        }
-    });
+        });
     std::vector<std::string> types(sensorTypes.size());
     for (const auto& [type, dt] : sensorTypes)
     {
@@ -269,64 +290,74 @@ void interfaceRemoved(
 
 int main()
 {
-    boost::asio::io_context io;
-    auto systemBus = std::make_shared<sdbusplus::asio::connection>(io);
-    sdbusplus::asio::object_server objectServer(systemBus, true);
-    objectServer.add_manager("/xyz/openbmc_project/sensors");
-    systemBus->request_name("xyz.openbmc_project.DamagedSensor");
+    try
+    {
+        boost::asio::io_context io;
+        auto systemBus = std::make_shared<sdbusplus::asio::connection>(io);
+        sdbusplus::asio::object_server objectServer(systemBus, true);
+        objectServer.add_manager("/xyz/openbmc_project/sensors");
+        systemBus->request_name("xyz.openbmc_project.DamagedSensor");
 
-    boost::container::flat_map<std::string, std::shared_ptr<DamagedSensor>>
-        sensors;
-    auto sensorsChanged =
-        std::make_shared<boost::container::flat_set<std::string>>();
+        boost::container::flat_map<std::string, std::shared_ptr<DamagedSensor>>
+            sensors;
+        auto sensorsChanged =
+            std::make_shared<boost::container::flat_set<std::string>>();
 
-    boost::asio::post(io, [&]() {
-        createSensors(io, objectServer, sensors, systemBus, nullptr, false);
-    });
-
-    boost::asio::steady_timer filterTimer(io);
-    std::function<void(sdbusplus::message_t&)> eventHandler =
-        [&](sdbusplus::message_t& message) {
-        if (message.is_method_error())
-        {
-            std::cerr << "callback method error\n";
-            return;
-        }
-        sensorsChanged->insert(message.get_path());
-        // this implicitly cancels the timer
-        filterTimer.expires_after(std::chrono::seconds(1));
-
-        filterTimer.async_wait([&](const boost::system::error_code& ec) {
-            if (ec == boost::asio::error::operation_aborted)
-            {
-                /* we were canceled*/
-                return;
-            }
-            if (ec)
-            {
-                std::cerr << "timer error\n";
-                return;
-            }
-            createSensors(io, objectServer, sensors, systemBus, sensorsChanged,
-                          false);
+        boost::asio::post(io, [&]() {
+            createSensors(io, objectServer, sensors, systemBus, nullptr, false);
         });
-    };
 
-    std::vector<std::unique_ptr<sdbusplus::bus::match_t>> matches =
-        setupPropertiesChangedMatches(*systemBus, sensorTypes, eventHandler);
-    setupManufacturingModeMatch(*systemBus);
+        boost::asio::steady_timer filterTimer(io);
+        std::function<void(sdbusplus::message_t&)> eventHandler =
+            [&](sdbusplus::message_t& message) {
+                if (message.is_method_error())
+                {
+                    std::cerr << "callback method error\n";
+                    return;
+                }
+                sensorsChanged->insert(message.get_path());
+                // this implicitly cancels the timer
+                filterTimer.expires_after(std::chrono::seconds(1));
 
-    // Watch for entity-manager to remove configuration interfaces
-    // so the corresponding sensors can be removed.
-    auto ifaceRemovedMatch = std::make_unique<sdbusplus::bus::match_t>(
-        static_cast<sdbusplus::bus_t&>(*systemBus),
-        "type='signal',member='InterfacesRemoved',arg0path='" +
-            std::string(inventoryPath) + "/'",
-        [&sensors](sdbusplus::message_t& msg) {
-        interfaceRemoved(msg, sensors);
-    });
+                filterTimer.async_wait(
+                    [&](const boost::system::error_code& ec) {
+                        if (ec == boost::asio::error::operation_aborted)
+                        {
+                            /* we were canceled*/
+                            return;
+                        }
+                        if (ec)
+                        {
+                            std::cerr << "timer error\n";
+                            return;
+                        }
+                        createSensors(io, objectServer, sensors, systemBus,
+                                      sensorsChanged, false);
+                    });
+            };
 
-    matches.emplace_back(std::move(ifaceRemovedMatch));
+        std::vector<std::unique_ptr<sdbusplus::bus::match_t>> matches =
+            setupPropertiesChangedMatches(*systemBus, sensorTypes,
+                                          eventHandler);
+        setupManufacturingModeMatch(*systemBus);
 
-    io.run();
+        // Watch for entity-manager to remove configuration interfaces
+        // so the corresponding sensors can be removed.
+        auto ifaceRemovedMatch = std::make_unique<sdbusplus::bus::match_t>(
+            static_cast<sdbusplus::bus_t&>(*systemBus),
+            "type='signal',member='InterfacesRemoved',arg0path='" +
+                std::string(inventoryPath) + "/'",
+            [&sensors](sdbusplus::message_t& msg) {
+                interfaceRemoved(msg, sensors);
+            });
+
+        matches.emplace_back(std::move(ifaceRemovedMatch));
+
+        io.run();
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "Unhandled exception: " << e.what() << std::endl;
+        return -1;
+    }
 }

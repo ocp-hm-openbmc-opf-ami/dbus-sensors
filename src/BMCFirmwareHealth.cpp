@@ -24,9 +24,22 @@ BMCFirmwareHealth::BMCFirmwareHealth(
         "/xyz/openbmc_project/sensors/bmcfirmwarehealth/" + name,
         "xyz.openbmc_project.Sensor.State");
 
+    if (!sensorInterface)
+    {
+        std::cerr << "Error: Failed to create DBus interfaces\n";
+        return;
+    }
+
     association = objectServer.add_interface(
         "/xyz/openbmc_project/sensors/bmcfirmwarehealth/" + name,
         association::interface);
+
+    if (!association)
+    {
+        std::cerr << "Error: Failed to create DBus interfaces\n";
+        return;
+    }
+
     setInitialProperties();
 
     if (!sensorInterface || !association)
@@ -130,6 +143,11 @@ void BMCFirmwareHealth::restartRead()
         if (ec == boost::asio::error::operation_aborted)
         {
             return; // we're being canceled
+        }
+        if (ec)
+        {
+            std::cerr << "error in restartRead\n" << std::endl;
+            return;
         }
         std::shared_ptr<BMCFirmwareHealth> self = weakRef.lock();
         if (!self)

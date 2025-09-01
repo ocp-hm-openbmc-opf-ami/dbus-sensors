@@ -131,6 +131,12 @@ bool PSUSensor::isActive()
 void PSUSensor::activate(const std::string& newPath,
                          const std::shared_ptr<I2CDevice>& newI2CDevice)
 {
+    if (isActive())
+    {
+        // Avoid activating an active sensor
+        return;
+    }
+
     path = newPath;
     i2cDevice = newI2CDevice;
     inputDev.open(path, boost::asio::random_access_file::read_only);
@@ -207,20 +213,29 @@ void PSUSensor::handleResponse(const boost::system::error_code& err,
 {
     if (err == boost::asio::error::operation_aborted)
     {
-        std::cerr << "Read aborted\n";
+        if (debug)
+        {
+            std::cerr << "Read aborted\n";
+        }
         return;
     }
     if ((err == boost::system::errc::bad_file_descriptor) ||
         (err == boost::asio::error::misc_errors::not_found))
     {
-        std::cerr << "Bad file descriptor for " << path << "\n";
+        if (debug)
+        {
+            std::cerr << "Bad file descriptor for " << path << "\n";
+        }
         return;
     }
     if (err || bytesRead == 0)
     {
         if (readingStateGood())
         {
-            std::cerr << name << " read failed\n";
+            if (debug)
+            {
+                std::cerr << name << " read failed\n";
+            }
         }
         restartRead();
         return;
@@ -233,10 +248,15 @@ void PSUSensor::handleResponse(const boost::system::error_code& err,
     try
     {
         rawValue = std::stod(bufferRef.data());
-        if (filterZero && rawValue == 0 && value != 0)
+        if (filterZero && rawValue == 0)
         {
-            value = 0;
-            std::cerr << "INFO: Temperature " << name << " ignore first zero\n";
+            if (debug)
+            {
+                std::cerr << "INFO: Skipping zero temperature for " << name
+                          << "\n";
+            }
+            restartRead();
+            return;
         }
         else
         {

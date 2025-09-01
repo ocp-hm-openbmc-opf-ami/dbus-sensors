@@ -130,6 +130,23 @@ bool parseThresholdsFromAttr(
     const std::string& inputPath, const double& scaleFactor,
     const double& offset = 0);
 
+bool parseThresholdsFromAttr_CPU(
+    std::vector<thresholds::Threshold>& thresholdVector,
+    const std::string& inputPath, const double& scaleFactor,
+    const double& offset = 0);
+
+constexpr int PSU_BUS = 7;
+constexpr int PSU_ADDR1 = 0x58;
+constexpr int PSU_ADDR2 = 0x59;
+constexpr int PSU_ADDR3 = 0x5A;
+
+struct PSUData
+{
+    int max_power;
+};
+
+PSUData read_psu_max_power();
+
 struct ThresholdDefinition
 {
     Level level;

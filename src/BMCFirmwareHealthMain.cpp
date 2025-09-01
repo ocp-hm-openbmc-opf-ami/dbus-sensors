@@ -86,11 +86,20 @@ void createSensors(
                 auto& sensorConstruct = sensors[sensorName];
                 sensorConstruct = nullptr;
 
-                sensorConstruct = std::make_shared<BMCFirmwareHealth>(
-                    objectServer, dbusConnection, io, sensorName,
-                    *interfacePath);
+                try
+                {
+                    sensorConstruct = std::make_shared<BMCFirmwareHealth>(
+                        objectServer, dbusConnection, io, sensorName,
+                        *interfacePath);
 
-                sensorConstruct->setupRead();
+                    sensorConstruct->setupRead();
+                }
+                catch (const std::exception& e)
+                {
+                    std::cerr
+                        << "sensorConstruct failed: " << e.what() << std::endl;
+                    continue;
+                }
             }
         });
 
@@ -99,56 +108,66 @@ void createSensors(
 
 int main()
 {
-    boost::asio::io_context io;
-    auto systemBus = std::make_shared<sdbusplus::asio::connection>(io);
-    sdbusplus::asio::object_server objectServer(systemBus, true);
-    objectServer.add_manager("/xyz/openbmc_project/sensors");
-    systemBus->request_name("xyz.openbmc_project.BMCFirmwareHealth");
+    try
+    {
+        boost::asio::io_context io;
+        auto systemBus = std::make_shared<sdbusplus::asio::connection>(io);
+        sdbusplus::asio::object_server objectServer(systemBus, true);
+        objectServer.add_manager("/xyz/openbmc_project/sensors");
+        systemBus->request_name("xyz.openbmc_project.BMCFirmwareHealth");
 
-    boost::container::flat_map<std::string, std::shared_ptr<BMCFirmwareHealth>>
-        sensors;
-    std::vector<std::unique_ptr<sdbusplus::bus::match::match>> matches;
-    auto sensorsChanged =
-        std::make_shared<boost::container::flat_set<std::string>>();
+        boost::container::flat_map<std::string,
+                                   std::shared_ptr<BMCFirmwareHealth>>
+            sensors;
+        std::vector<std::unique_ptr<sdbusplus::bus::match::match>> matches;
+        auto sensorsChanged =
+            std::make_shared<boost::container::flat_set<std::string>>();
 
-    boost::asio::post(io, [&]() {
-        createSensors(io, objectServer, sensors, systemBus, nullptr);
-    });
+        boost::asio::post(io, [&]() {
+            createSensors(io, objectServer, sensors, systemBus, nullptr);
+        });
 
-    boost::asio::deadline_timer filterTimer(io);
-    std::function<void(sdbusplus::message::message&)> eventHandler =
-        [&](sdbusplus::message::message& message) {
-            if (message.is_method_error())
-            {
-                std::cerr << "callback method error\n";
-                return;
-            }
-            sensorsChanged->insert(message.get_path());
-            // this implicitly cancels the timer
-            filterTimer.expires_from_now(boost::posix_time::seconds(1));
-            filterTimer.async_wait([&](const boost::system::error_code& ec) {
-                if (ec == boost::asio::error::operation_aborted)
+        boost::asio::deadline_timer filterTimer(io);
+        std::function<void(sdbusplus::message::message&)> eventHandler =
+            [&](sdbusplus::message::message& message) {
+                if (message.is_method_error())
                 {
-                    /* we were canceled*/
+                    std::cerr << "callback method error\n";
                     return;
                 }
-                if (ec)
-                {
-                    std::cerr << "timer error\n";
-                    return;
-                }
-                createSensors(io, objectServer, sensors, systemBus,
-                              sensorsChanged);
-            });
-        };
+                sensorsChanged->insert(message.get_path());
+                // this implicitly cancels the timer
+                filterTimer.expires_from_now(boost::posix_time::seconds(1));
+                filterTimer.async_wait(
+                    [&](const boost::system::error_code& ec) {
+                        if (ec == boost::asio::error::operation_aborted)
+                        {
+                            /* we were canceled*/
+                            return;
+                        }
+                        if (ec)
+                        {
+                            std::cerr << "timer error\n";
+                            return;
+                        }
+                        createSensors(io, objectServer, sensors, systemBus,
+                                      sensorsChanged);
+                    });
+            };
 
-    auto match = std::make_unique<sdbusplus::bus::match::match>(
-        static_cast<sdbusplus::bus::bus&>(*systemBus),
-        "type='signal',member='PropertiesChanged',path_namespace='" +
-            std::string(inventoryPath) + "',arg0namespace='" +
-            configInterfaceName(sensorType) + "'",
-        eventHandler);
-    matches.emplace_back(std::move(match));
+        auto match = std::make_unique<sdbusplus::bus::match::match>(
+            static_cast<sdbusplus::bus::bus&>(*systemBus),
+            "type='signal',member='PropertiesChanged',path_namespace='" +
+                std::string(inventoryPath) + "',arg0namespace='" +
+                configInterfaceName(sensorType) + "'",
+            eventHandler);
+        matches.emplace_back(std::move(match));
 
-    io.run();
+        io.run();
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "Unhandled exception: " << e.what() << std::endl;
+        return -1;
+    }
 }
