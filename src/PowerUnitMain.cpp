@@ -67,6 +67,19 @@ void createSensors(
                 std::string sensorName =
                     std::get<std::string>(findSensorName->second);
 
+                auto findSDRType = baseConfiguration->second.find("SDRType");
+                std::optional<uint8_t> sensorSDRType = std::nullopt;
+                if (findSDRType == baseConfiguration->second.end())
+                {
+                    std::cerr << "could not determine configuration SDR Type"
+                              << "\n";
+                }
+                else
+                {
+                    sensorSDRType = std::visit(VariantToUnsignedIntVisitor(),
+                                               findSDRType->second);
+                }
+
                 // on rescans, only update sensors we were signaled by
                 auto findSensor = sensors.find(sensorName);
                 if (!firstScan && findSensor != sensors.end())
@@ -93,9 +106,9 @@ void createSensors(
                 auto& sensorConstruct = sensors[sensorName];
                 sensorConstruct = nullptr;
 
-                sensorConstruct =
-                    std::make_shared<PowerUnit>(objectServer, dbusConnection,
-                                                io, sensorName, *interfacePath);
+                sensorConstruct = std::make_shared<PowerUnit>(
+                    objectServer, dbusConnection, io, sensorName,
+                    *interfacePath, sensorSDRType);
             }
         });
 

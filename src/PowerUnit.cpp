@@ -13,12 +13,21 @@ PowerUnit::PowerUnit(sdbusplus::asio::object_server& objectServer,
                      std::shared_ptr<sdbusplus::asio::connection>& conn,
                      boost::asio::io_context& io __attribute__((unused)),
                      const std::string& sensorName,
-                     const std::string& sensorConfiguration) :
+                     const std::string& sensorConfiguration,
+                     std::optional<uint8_t> sensorSDRType) :
     Discrete(escapeName(sensorName), sensorConfiguration, conn),
     objServer(objectServer)
 {
-    sensorInterface = objectServer.add_interface(
-        baseObj + name, "xyz.openbmc_project.Sensor.State");
+    if (sensorSDRType.has_value() && sensorSDRType.value() == EVENT_SDR_TYPE)
+    {
+        sensorInterface = objectServer.add_interface(
+            baseObj + name, "xyz.openbmc_project.Sensor.EventOnly");
+    }
+    else
+    {
+        sensorInterface = objectServer.add_interface(
+            baseObj + name, "xyz.openbmc_project.Sensor.State");
+    }
 
     association =
         objectServer.add_interface(baseObj + name, association::interface);
