@@ -13,8 +13,6 @@
 #include <string>
 #include <vector>
 
-#define EVENT_SDR_TYPE 3
-
 namespace fs = std::filesystem;
 
 class PowerUnit :
@@ -25,8 +23,7 @@ class PowerUnit :
     PowerUnit(sdbusplus::asio::object_server& objectServer,
               std::shared_ptr<sdbusplus::asio::connection>& conn,
               boost::asio::io_context& io, const std::string& sensorName,
-              const std::string& sensorConfiguration,
-              std::optional<uint8_t> sensorSDRType);
+              const std::string& sensorConfiguration);
     ~PowerUnit() override;
 
     static constexpr size_t selEvtDataMaxSize = 3;
