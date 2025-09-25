@@ -86,7 +86,7 @@ void ExternalSensor::initWriteHook(
 
     // Connect ExternalSensor with Sensor
     auto weakThis = weak_from_this();
-    externalSetHook = [weakThis]() {
+    externalSetHook = [weakThis]([[maybe_unused]] double newValue) {
         auto lockThis = weakThis.lock();
         if (lockThis)
         {

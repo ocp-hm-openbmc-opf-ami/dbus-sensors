@@ -68,10 +68,24 @@ inline std::string escapeName(const std::string& sensorName)
 }
 
 // Add IPMI & Refish Log
+#ifdef FEATURE_APISENSOR_SUPPORT
+// Existing code does nothing with AdditionalData.
+// APISensor properly uses AdditionalData.
+// To keep compatibility with existing code, make AdditionalData
+// optional argument passed to addSelEntry().
+using AdditionalData = std::map<std::string, std::string>;
+void addSelEntry(
+    [[maybe_unused]] std::shared_ptr<sdbusplus::asio::connection>& conn,
+    std::vector<std::string> logData, std::vector<uint8_t> eventData,
+    bool assert,
+    /* OPTIONAL */ const AdditionalData addData = AdditionalData());
+
+void toHexStr(const std::vector<uint8_t> bytes, std::string& hexStr);
+#else
 void addSelEntry(std::shared_ptr<sdbusplus::asio::connection>& conn,
                  std::vector<std::string> logData,
                  std::vector<uint8_t> eventData, bool assert);
-
+#endif
 enum class PowerState
 {
     on,
@@ -392,8 +406,8 @@ struct GetSensorConfiguration :
 
 // The common scheme for sysfs files naming is: <type><number>_<item>.
 // This function returns optionally these 3 elements as a tuple.
-std::optional<std::tuple<std::string, std::string, std::string>>
-    splitFileName(const std::filesystem::path& filePath);
+std::optional<std::tuple<std::string, std::string, std::string>> splitFileName(
+    const std::filesystem::path& filePath);
 std::optional<double> readFile(const std::string& thresholdFile,
                                const double& scaleFactor, bool nanOk = false);
 void setupManufacturingModeMatch(sdbusplus::asio::connection& conn);

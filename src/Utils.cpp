@@ -63,7 +63,9 @@ namespace fs = std::filesystem;
 using ErrLvl = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
 auto sevLvl = ErrLvl::Informational;
 using namespace phosphor::logging;
+#ifndef FEATURE_APISENSOR_SUPPORT
 using AdditionalData = std::map<std::string, std::string>;
+#endif
 static bool powerStatusOn = false;
 static bool biosHasPost = false;
 static bool manufacturingMode = false;
@@ -74,6 +76,51 @@ static std::unique_ptr<sdbusplus::bus::match_t> powerMatch = nullptr;
 static std::unique_ptr<sdbusplus::bus::match_t> postMatch = nullptr;
 static std::unique_ptr<sdbusplus::bus::match_t> chassisMatch = nullptr;
 
+#ifdef FEATURE_APISENSOR_SUPPORT
+void addSelEntry(
+    [[maybe_unused]] std::shared_ptr<sdbusplus::asio::connection>& conn,
+    const std::vector<std::string> logData,
+    const std::vector<uint8_t> eventData, bool assert,
+    /* OPTIONAL */ const AdditionalData addData)
+{
+    // Create a new thread with new io_context to handle the SEL logging
+    // to avoid blocking the reactor main thread and causing dbus timeouts.
+    std::thread([logData, eventData, assert, addData]() {
+        try
+        {
+            boost::asio::io_context addSelEntryIoContext;
+            auto conn = std::make_shared<sdbusplus::asio::connection>(
+                addSelEntryIoContext);
+
+            const std::string sensorName = logData[0];
+            const std::string eventName = logData[1];
+            const std::string sensorPath = logData[2];
+            std::string redfishId = sensorName + " logged a " + eventName;
+
+            // Log SEL event
+            auto method = conn->new_method_call(ipmiService, ipmiObjPath,
+                                                ipmiIntf, ipmiSelAddMethod);
+            method.append(redfishId, sensorPath, eventData, assert, selBMCGenID,
+                          addData);
+            try
+            {
+                auto reply = conn->call(method);
+            }
+            catch (sdbusplus::exception_t&)
+            {
+                std::cerr << "Error adding SEL Event for " << sensorPath
+                          << "\n";
+                return;
+            }
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << "Error (exception) adding SEL Event:" << e.what()
+                      << '\n';
+        }
+    }).detach();
+}
+#else
 void addSelEntry(std::shared_ptr<sdbusplus::asio::connection>& conn,
                  const std::vector<std::string> logData,
                  const std::vector<uint8_t> eventData, bool assert)
@@ -104,6 +151,7 @@ void addSelEntry(std::shared_ptr<sdbusplus::asio::connection>& conn,
         return;
     }
 }
+#endif
 
 /**
  * return the contents of a file
@@ -920,3 +968,16 @@ std::vector<std::unique_ptr<sdbusplus::bus::match_t>>
     }
     return setupPropertiesChangedMatches(bus, {types}, handler);
 }
+
+#ifdef FEATURE_APISENSOR_SUPPORT
+void toHexStr(const std::vector<uint8_t> bytes, std::string& hexStr)
+{
+    std::stringstream stream;
+    stream << std::hex << std::uppercase << std::setfill('0');
+    for (const uint8_t& byte : bytes)
+    {
+        stream << std::setw(2) << static_cast<int>(byte);
+    }
+    hexStr = stream.str();
+}
+#endif

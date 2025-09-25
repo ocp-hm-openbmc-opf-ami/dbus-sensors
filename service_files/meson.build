@@ -29,6 +29,7 @@ unit_files = [
     ['bmc-firmware-health', 'xyz.openbmc_project.bmcfirmwarehealth.service'],
     ['damaged-sensor', 'xyz.openbmc_project.damagedsensor.service'],
     ['logstatus', 'xyz.openbmc_project.logstatus.service'],
+
 ]
 
 fs = import('fs')
@@ -41,3 +42,38 @@ foreach tuple : unit_files
         )
     endif
 endforeach
+
+if get_option('apisensor').allowed()
+  num_apisensor_reactors = get_option('num_apisensor_reactors')
+
+  foreach i : range(1, num_apisensor_reactors + 1)
+    conf = configuration_data()
+    conf.set('REACTOR_ID', i)
+
+    # Set exec args only for reactor > 1
+    if i == 1
+      conf.set('EXEC_ARGS', '')
+    else
+      conf.set('EXEC_ARGS', ' ' + i.to_string())
+    endif
+
+    out_file = 'xyz.openbmc_project.apisensor@' + i.to_string() + '.service'
+
+    configure_file(
+      input: 'xyz.openbmc_project.apisensor@.service.in',
+      output: out_file,
+      configuration: conf,
+      install: true,
+      install_dir: systemd_system_unit_dir,
+    )
+  endforeach
+
+  # Install the @.service template (mandatory for systemctl enable to work)
+  configure_file(
+    input: 'xyz.openbmc_project.apisensor@.service.in',
+    output: 'xyz.openbmc_project.apisensor@.service',
+    configuration: configuration_data(),
+    install: true,
+    install_dir: systemd_system_unit_dir,
+  )
+endif

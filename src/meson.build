@@ -13,6 +13,10 @@ configure_file(
     configuration: conf_data,
 )
 
+if get_option('apisensor').allowed()
+    add_project_arguments('-DFEATURE_APISENSOR_SUPPORT', language: 'cpp')
+endif
+
 thresholds_a = static_library(
     'thresholds_a',
     'Thresholds.cpp',
@@ -414,3 +418,18 @@ if get_option('logstatus').enabled()
     )
 endif
 
+if get_option('apisensor').allowed()
+    executable(
+        'apisensor',
+        'APISensor.cpp',
+        'APISensorMain.cpp',
+        dependencies: [
+            default_deps,
+            gpiodcxx,
+            i2c,
+            thresholds_dep,
+            utils_dep,
+        ],
+        install: true,
+    )
+endif

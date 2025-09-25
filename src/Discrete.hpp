@@ -40,9 +40,9 @@ enum class IPMIThresholds
 
 enum class HostState
 {
-     Running,
-     Off,
-     Unknown,
+    Running,
+    Off,
+    Unknown,
 };
 
 struct Discrete
@@ -63,22 +63,45 @@ struct Discrete
     uint16_t state = 0;
 
     std::shared_ptr<sdbusplus::asio::connection> dbusConnection;
-
+#ifdef FEATURE_APISENSOR_SUPPORT
+    bool internalSet = false;
+    // This member variable provides a hook that can be used to receive
+    // notification whenever this Sensor's value is externally set via D-Bus.
+    // If interested, assign your own lambda to this variable, during
+    // construction of your Sensor subclass. See ExternalSensor for example.
+    std::function<void(uint16_t newState)> externalSetHook;
+#endif
     int updateState(std::shared_ptr<sdbusplus::asio::dbus_interface>& interface,
                     const uint16_t& newState)
     {
+#ifdef FEATURE_APISENSOR_SUPPORT
+        internalSet = true;
+#endif
         if (interface && !(interface->set_property("State", newState)))
         {
             std::cerr << "error setting State \n";
         }
+#ifdef FEATURE_APISENSOR_SUPPORT
+        internalSet = false;
+#endif
         return 1;
     }
 
     int setSensorState(const uint16_t& newState, uint16_t& oldState)
     {
-        oldState = newState;
+#ifdef FEATURE_APISENSOR_SUPPORT
+        if (!internalSet)
+        {
+            // Trigger the hook, as an external set has just happened
+            if (externalSetHook)
+            {
+                // Will throw if fails (state will not be updated)
+                externalSetHook(newState);
+            }
+        }
+#endif
         state = newState;
-
+        oldState = newState;
         return 1;
     }
 
@@ -110,36 +133,35 @@ struct Discrete
             std::move(statusCallback));
     }
 
-uint8_t getHostStatus(std::shared_ptr<sdbusplus::asio::connection> conn)
-{
-    std::string pwrStatus;
-    value variant;
-    try
+    uint8_t getHostStatus(std::shared_ptr<sdbusplus::asio::connection> conn)
     {
-        auto method = conn->new_method_call(power::busname, power::path,
-                                            properties::interface,properties::get);
-        method.append(power::interface, "CurrentHostState");
-        auto reply = conn->call(method);
-        reply.read(variant);
-        pwrStatus = std::get<std::string>(variant);
+        std::string pwrStatus;
+        value variant;
+        try
+        {
+            auto method =
+                conn->new_method_call(power::busname, power::path,
+                                      properties::interface, properties::get);
+            method.append(power::interface, "CurrentHostState");
+            auto reply = conn->call(method);
+            reply.read(variant);
+            pwrStatus = std::get<std::string>(variant);
+        }
+        catch (sdbusplus::exception_t& e)
+        {
+            std::cerr << "Failed to get getHostStatus Value";
+            return (static_cast<uint8_t>(HostState::Unknown));
+        }
+        if (pwrStatus == "xyz.openbmc_project.State.Host.HostState.Running")
+        {
+            return (static_cast<uint8_t>(HostState::Running));
+        }
+        else if (pwrStatus == "xyz.openbmc_project.State.Host.HostState.Off")
+        {
+            return (static_cast<uint8_t>(HostState::Off));
+        }
+        return (static_cast<uint8_t>(HostState::Unknown));
     }
-    catch (sdbusplus::exception_t& e)
-    {
-
-        std::cerr<<"Failed to get getHostStatus Value";
-        return (static_cast<uint8_t>(HostState::Unknown)) ;
-    }
-    if (pwrStatus == "xyz.openbmc_project.State.Host.HostState.Running")
-    {
-            return (static_cast<uint8_t>(HostState::Running)) ;
-    }
-    else if (pwrStatus == "xyz.openbmc_project.State.Host.HostState.Off")
-    {
-            return (static_cast<uint8_t>(HostState::Off)) ;
-    }
-    return (static_cast<uint8_t>(HostState::Unknown)) ;
-}
-
 };
 
 inline std::string getService(const std::string& intf, const std::string& path)

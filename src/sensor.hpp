@@ -113,7 +113,7 @@ struct Sensor
     // notification whenever this Sensor's value is externally set via D-Bus.
     // If interested, assign your own lambda to this variable, during
     // construction of your Sensor subclass. See ExternalSensor for example.
-    std::function<void()> externalSetHook;
+    std::function<void(double newValue)> externalSetHook;
 
     using Level = thresholds::Level;
     using Direction = thresholds::Direction;
@@ -122,8 +122,8 @@ struct Sensor
                thresholds::thresProp.size()>
         thresholdInterfaces;
 
-    std::shared_ptr<sdbusplus::asio::dbus_interface>
-        getThresholdInterface(Level lev)
+    std::shared_ptr<sdbusplus::asio::dbus_interface> getThresholdInterface(
+        Level lev)
     {
         size_t index = static_cast<size_t>(lev);
         if (index >= thresholdInterfaces.size())
@@ -231,18 +231,18 @@ struct Sensor
             {
                 throw SetSensorError();
             }
+            // Trigger the hook, as an external set has just happened
+            if (externalSetHook)
+            {
+                // Will throw if fails (value will not be updated)
+                externalSetHook(newValue);
+            }
 
             oldValue = newValue;
             overriddenState = true;
             // check thresholds for external set
             value = newValue;
             checkThresholds();
-
-            // Trigger the hook, as an external set has just happened
-            if (externalSetHook)
-            {
-                externalSetHook();
-            }
         }
         else if (!overriddenState)
         {
@@ -542,7 +542,15 @@ struct Sensor
         {
             return (lNan != rNan);
         }
+#ifdef FEATURE_APISENSOR_SUPPORT
+        return lVal != rVal; // Instead, just do a simple comparison.
+#else
+        // hysteresisPublish = (maxValue - minValue) * 0.0001
+        // When using large differences between maxValue & minValue.
+        // the logic below will break the sensors ability to
+        // receive updates (see resolution above).
         return std::abs(lVal - rVal) > hysteresisPublish;
+#endif
     }
 
   private:
