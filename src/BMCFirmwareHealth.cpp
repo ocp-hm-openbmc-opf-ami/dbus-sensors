@@ -87,6 +87,11 @@ void BMCFirmwareHealth::monitorState()
 
     for (const auto& [path, interfaceDict] : respData)
     {
+	if (path.find("PMT") != std::string::npos)
+        {
+             continue; // Skip PMT-related sensor paths
+        }
+
         for (const auto& [owner, _] : interfaceDict)
         {
             auto call = conn->new_method_call(owner.c_str(), path.c_str(),
