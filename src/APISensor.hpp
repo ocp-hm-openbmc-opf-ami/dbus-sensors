@@ -25,6 +25,8 @@ typedef int (*infoFunction_T)(std::string sensorName,
                               std::map<std::string, InfoVariantType>* mapPtr);
 typedef int (*locationIndicatorFunction_T)(std::string sensorName, bool);
 
+#define EVENT_SDR_TYPE 3
+
 struct SetSensorInternalFailure : sdbusplus::exception_t
 {
     const char* name() const noexcept override
@@ -140,6 +142,7 @@ class APISensorDiscrete :
         const bool sensorProvidesProbeInterface,
         const std::vector<std::string>& sensorStates,
         const std::string& sensorInitFuncName,
+        std::optional<uint8_t> sensorSDRType,
         const std::string& sensorReadFuncName,
         const std::string& sensorWriteFuncName,
         const std::string& sensorInfoFuncName,

@@ -457,7 +457,7 @@ APISensorDiscrete::APISensorDiscrete(
     const std::string& sensorTypePathOverride,
     const bool sensorProvidesProbeInterface,
     const std::vector<std::string>& sensorStates,
-    const std::string& sensorInitFuncName,
+    const std::string& sensorInitFuncName, std::optional<uint8_t> sensorSDRType,
     const std::string& sensorReadFuncName,
     const std::string& sensorWriteFuncName,
     const std::string& sensorInfoFuncName,
@@ -656,9 +656,16 @@ APISensorDiscrete::APISensorDiscrete(
         }
     }
 
-    sensorInterface = objectServer.add_interface(
-        objectPath, "xyz.openbmc_project.Sensor.State");
-
+    if (sensorSDRType.has_value() && sensorSDRType.value() == EVENT_SDR_TYPE)
+    {
+        sensorInterface = objectServer.add_interface(
+            objectPath, "xyz.openbmc_project.Sensor.EventOnly");
+    }
+    else
+    {
+        sensorInterface = objectServer.add_interface(
+            objectPath, "xyz.openbmc_project.Sensor.State");
+    }
     association =
         objectServer.add_interface(objectPath, association::interface);
 

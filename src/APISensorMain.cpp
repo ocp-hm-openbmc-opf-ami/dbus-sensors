@@ -142,6 +142,25 @@ T getValueFromConfiguration(
                 value.clear();
             }
         }
+        else if constexpr (std::is_same_v<T, uint8_t>)
+        {
+            try
+            {
+                value = std::visit(VariantToUnsignedIntVisitor(),
+                                   configFound->second);
+                valid = true; // assume if no exception, value is valid
+            }
+            catch (const std::exception& e)
+            {
+                if constexpr (debug)
+                {
+                    std::cerr << debugMsgPrefix << configKey
+                              << " parameter cannot be parsed for "
+                              << interfacePath << "\n";
+                }
+                value = 0;
+            }
+        }
     }
     // Caller must evaluate 'found' and 'valid' to determine success of call
     return value;
@@ -272,6 +291,11 @@ void createSensors(
             std::string sensorInitFuncName =
                 getValueFromConfiguration<std::string>(
                     "InitFunction", interfacePath, baseConfigMap, found, valid);
+
+            // Initialize sensorSDRType as optional<uint8_t>
+            std::optional<uint8_t> sensorSDRType = std::nullopt;
+            sensorSDRType = getValueFromConfiguration<uint8_t>(
+                "SDRType", interfacePath, baseConfigMap, found, valid);
 
             // WriteFunction is optional string parameter
             std::string sensorWriteFuncName =
@@ -472,7 +496,7 @@ void createSensors(
                         sensorEventReadingType, sensorTypeCode, sensorEntityId,
                         sensorEntityInstance, sensorTypePathOverride,
                         sensorProvidesProbeInterface, sensorStates,
-                        sensorInitFuncName, sensorReadFuncName,
+                        sensorInitFuncName, sensorSDRType, sensorReadFuncName,
                         sensorWriteFuncName, sensorInfoFuncName,
                         sensorInfoFuncCallState,
                         sensorLocationIndicatorFuncName, sensorPollTimeMs,
