@@ -41,6 +41,7 @@ boost = dependency('boost', version: '>=1.83.0', include_type: 'system')
 sdbusplus = dependency('sdbusplus', include_type: 'system')
 phosphor_logging_dep = dependency('phosphor-logging')
 libudev = dependency('libudev', required : false, include_type: 'system')
+libpsmapisensor = dependency('libpsmapisensor', required : false , include_type: 'system')
 boost_dep = dependency(
     'boost',
     modules: ['coroutine'],
@@ -53,6 +54,7 @@ default_deps = [
     phosphor_logging_dep,
     sdbusplus,
     uring,
+    libpsmapisensor,
 ]
 
 subdir('service_files')

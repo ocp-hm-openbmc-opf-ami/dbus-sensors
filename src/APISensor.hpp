@@ -102,7 +102,9 @@ class APISensor : public Sensor, public std::enable_shared_from_this<APISensor>
             {"PWM", "pwm"},
             {"RPM", "tach"},
             {"Hours", "hours"},
-            {"Count", "count"}};
+            {"Count", "count"},
+	    {"Hz",    "frequency"}
+	};
     std::string dbusSensorType;
     std::string objType;
     sdbusplus::asio::object_server& objServer;
