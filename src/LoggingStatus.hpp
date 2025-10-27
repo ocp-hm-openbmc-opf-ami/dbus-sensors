@@ -23,7 +23,7 @@ enum class logStatusEvent : uint8_t
     LogAreaAlmostFull = 0x05,
 };
 
-enum class logOffset : uint8_t
+enum class logOffset : uint16_t
 {
     none = 0x00,
     Cleared = 0x04,
