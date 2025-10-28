@@ -85,6 +85,7 @@ static const I2CDeviceTypeMap sensorTypes{
     {"NCT7802", I2CDeviceType{"nct7802", true}},
     {"PT5161L", I2CDeviceType{"pt5161l", true}},
     {"SBTSI", I2CDeviceType{"sbtsi", true}},
+    {"SBRMI", I2CDeviceType{"sbrmi", true}},
     {"SI7020", I2CDeviceType{"si7020", false}},
     {"TMP100", I2CDeviceType{"tmp100", true}},
     {"TMP112", I2CDeviceType{"tmp112", true}},
@@ -98,8 +99,8 @@ static const I2CDeviceTypeMap sensorTypes{
     {"W83773G", I2CDeviceType{"w83773g", true}},
 };
 
-static struct SensorParams
-    getSensorParameters(const std::filesystem::path& path)
+static struct SensorParams getSensorParameters(
+    const std::filesystem::path& path)
 {
     // offset is to default to 0 and scale to 1, see lore
     // https://lore.kernel.org/linux-iio/5c79425f-6e88-36b6-cdfe-4080738d039f@metafoo.de/
@@ -206,8 +207,8 @@ struct SensorConfig
 using SensorConfigMap =
     boost::container::flat_map<SensorConfigKey, SensorConfig>;
 
-static SensorConfigMap
-    buildSensorConfigMap(const ManagedObjectType& sensorConfigs)
+static SensorConfigMap buildSensorConfigMap(
+    const ManagedObjectType& sensorConfigs)
 {
     SensorConfigMap configMap;
     for (const auto& [path, cfgData] : sensorConfigs)

@@ -417,7 +417,6 @@ if get_option('logstatus').enabled()
         install: true,
     )
 endif
-
 if get_option('apisensor').allowed()
     executable(
         'apisensor',
