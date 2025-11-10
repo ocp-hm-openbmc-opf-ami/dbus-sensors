@@ -9,11 +9,13 @@ Requires=xyz.openbmc_project.hwmontempsensor.service
 After=xyz.openbmc_project.hwmontempsensor.service
 
 [Service]
+Type=dbus
+BusName=xyz.openbmc_project.DamagedSensor
 Restart=always
 RestartSec=5
 #Allow time for all devices to get instantiated
 ExecStartPre=/bin/sleep 30
-ExecStart=/usr/bin/damagedsensor
+ExecStart=/usr/libexec/dbus-sensors/damagedsensor
 
 [Install]
 WantedBy=multi-user.target

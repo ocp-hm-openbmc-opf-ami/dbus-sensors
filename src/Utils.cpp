@@ -26,6 +26,7 @@
 #include <boost/asio/steady_timer.hpp>
 #include <boost/container/flat_map.hpp>
 #include <phosphor-logging/elog.hpp>
+#include <phosphor-logging/lg2.hpp>
 #include <phosphor-logging/log.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
@@ -201,7 +202,7 @@ std::optional<std::string> getFullHwmonFilePath(
          */
         searchVal = hwmonBaseName;
     }
-    if (permitSet.find(*searchVal) != permitSet.end())
+    if (permitSet.contains(*searchVal))
     {
         result = directory + "/" + hwmonBaseName + "_input";
     }
@@ -231,9 +232,9 @@ std::set<std::string> getPermitSet(const SensorBaseConfigMap& config)
         }
         catch (const std::bad_variant_access& err)
         {
-            std::cerr << err.what()
-                      << ":PermitList does not contain a list, wrong "
-                         "variant type.\n";
+            lg2::error(
+                "'{ERROR_MESSAGE}': PermitList does not contain a list, wrong variant type.",
+                "ERROR_MESSAGE", err.what());
         }
     }
     return permitSet;
@@ -262,10 +263,12 @@ bool getSensorConfiguration(
         }
         catch (const sdbusplus::exception_t& e)
         {
-            std::cerr << "While calling GetManagedObjects on service:"
-                      << entityManagerName << " exception name:" << e.name()
-                      << "and description:" << e.description()
-                      << " was thrown\n";
+            lg2::error(
+                "While calling GetManagedObjects on service: '{SERVICE_NAME}'"
+                " exception name: '{EXCEPTION_NAME}' and description: "
+                "'{EXCEPTION_DESCRIPTION}' was thrown",
+                "SERVICE_NAME", entityManagerName, "EXCEPTION_NAME", e.name(),
+                "EXCEPTION_DESCRIPTION", e.description());
             return false;
         }
     }
@@ -283,11 +286,12 @@ bool getSensorConfiguration(
     return true;
 }
 
-bool findFiles(const fs::path& dirPath, std::string_view matchString,
-               std::vector<fs::path>& foundPaths, int symlinkDepth)
+bool findFiles(const std::filesystem::path& dirPath,
+               std::string_view matchString,
+               std::vector<std::filesystem::path>& foundPaths, int symlinkDepth)
 {
     std::error_code ec;
-    if (!fs::exists(dirPath, ec))
+    if (!std::filesystem::exists(dirPath, ec))
     {
         return false;
     }
@@ -311,9 +315,10 @@ bool findFiles(const fs::path& dirPath, std::string_view matchString,
     {
         std::regex search(std::string{matchString});
         std::smatch match;
-        for (auto p = fs::recursive_directory_iterator(
-                 dirPath, fs::directory_options::follow_directory_symlink);
-             p != fs::recursive_directory_iterator(); ++p)
+        for (auto p = std::filesystem::recursive_directory_iterator(
+                 dirPath,
+                 std::filesystem::directory_options::follow_directory_symlink);
+             p != std::filesystem::recursive_directory_iterator(); ++p)
         {
             std::string path = p->path().string();
             if (!is_directory(*p))
@@ -333,13 +338,14 @@ bool findFiles(const fs::path& dirPath, std::string_view matchString,
 
     // The match string contains directories, verify each level of sub
     // directories
-    for (auto p = fs::recursive_directory_iterator(
-             dirPath, fs::directory_options::follow_directory_symlink);
-         p != fs::recursive_directory_iterator(); ++p)
+    for (auto p = std::filesystem::recursive_directory_iterator(
+             dirPath,
+             std::filesystem::directory_options::follow_directory_symlink);
+         p != std::filesystem::recursive_directory_iterator(); ++p)
     {
         std::vector<std::regex>::iterator matchPiece = matchPieces.begin();
-        fs::path::iterator pathIt = p->path().begin();
-        for (const fs::path& dir : dirPath)
+        std::filesystem::path::iterator pathIt = p->path().begin();
+        for (const std::filesystem::path& dir : dirPath)
         {
             if (dir.empty())
             {
@@ -455,8 +461,8 @@ static void getPowerStatus(
 
                 // we commonly come up before power control, we'll capture the
                 // property change later
-                std::cerr << "error getting power status " << ec.message()
-                          << "\n";
+                lg2::error("error getting power status: '{ERROR_MESSAGE}'",
+                           "ERROR_MESSAGE", ec.message());
                 return;
             }
             powerStatusOn = std::get<std::string>(state).ends_with(".Running");
@@ -487,8 +493,8 @@ static void getPostStatus(
                 }
                 // we commonly come up before power control, we'll capture the
                 // property change later
-                std::cerr << "error getting post status " << ec.message()
-                          << "\n";
+                lg2::error("error getting post status: '{ERROR_MESSAGE}'",
+                           "ERROR_MESSAGE", ec.message());
                 return;
             }
             const auto& value = std::get<std::string>(state);
@@ -523,8 +529,9 @@ static void getChassisStatus(
 
                 // we commonly come up before power control, we'll capture the
                 // property change later
-                std::cerr << "error getting chassis power status "
-                          << ec.message() << "\n";
+                lg2::error(
+                    "error getting chassis power status: '{ERROR_MESSAGE}'",
+                    "ERROR_MESSAGE", ec.message());
                 return;
             }
             chassisStatusOn =
@@ -566,10 +573,13 @@ void setupPowerMatchCallback(
                 {
                     timer.cancel();
                     powerStatusOn = false;
+                    std::cerr << "SensorPowerMatch: powerStatusOn = false\n";
                     hostStatusCallback(PowerState::on, powerStatusOn);
                     return;
                 }
                 // on comes too quickly
+                std::cerr
+                    << "SensorPowerMatch: powerStatusOn delay for 10 seconds\n";
                 timer.expires_after(std::chrono::seconds(10));
                 timer.async_wait(
                     [hostStatusCallback](boost::system::error_code ec) {
@@ -579,10 +589,12 @@ void setupPowerMatchCallback(
                         }
                         if (ec)
                         {
-                            std::cerr << "Timer error " << ec.message() << "\n";
+                            lg2::error("Timer error: '{ERROR_MESSAGE}'",
+                                       "ERROR_MESSAGE", ec.message());
                             return;
                         }
                         powerStatusOn = true;
+                        std::cerr << "SensorPowerMatch: powerStatusOn = true\n";
                         hostStatusCallback(PowerState::on, powerStatusOn);
                     });
             }
@@ -643,7 +655,8 @@ void setupPowerMatchCallback(
                     }
                     if (ec)
                     {
-                        std::cerr << "Timer error " << ec.message() << "\n";
+                        lg2::error("Timer error: '{ERROR_MESSAGE}'",
+                                   "ERROR_MESSAGE", ec.message());
                         return;
                     }
                     chassisStatusOn = true;
@@ -688,7 +701,7 @@ void createAssociation(
 {
     if (association)
     {
-        fs::path p(path);
+        std::filesystem::path p(path);
 
         std::vector<Association> associations;
         associations.emplace_back("chassis", "all_sensors",
@@ -699,18 +712,21 @@ void createAssociation(
 }
 
 void setInventoryAssociation(
-    const std::shared_ptr<sdbusplus::asio::dbus_interface>& association,
+    const std::weak_ptr<sdbusplus::asio::dbus_interface>& weakRef,
     const std::string& inventoryPath, const std::string& chassisPath)
 {
-    if (association)
+    auto association = weakRef.lock();
+    if (!association)
     {
-        std::vector<Association> associations;
-        associations.emplace_back("inventory", "sensors", inventoryPath);
-        associations.emplace_back("chassis", "all_sensors", chassisPath);
-
-        association->register_property("Associations", associations);
-        association->initialize();
+        return;
     }
+
+    std::vector<Association> associations;
+    associations.emplace_back("inventory", "sensors", inventoryPath);
+    associations.emplace_back("chassis", "all_sensors", chassisPath);
+
+    association->register_property("Associations", associations);
+    association->initialize();
 }
 
 std::optional<std::string> findContainingChassis(std::string_view configParent,
@@ -758,22 +774,24 @@ void createInventoryAssoc(
         "xyz.openbmc_project.Inventory.Item.Chassis",
     });
 
+    std::weak_ptr<sdbusplus::asio::dbus_interface> weakRef = association;
     conn->async_method_call(
-        [association, path](const boost::system::error_code ec,
-                            const GetSubTreeType& subtree) {
+        [weakRef, path](const boost::system::error_code ec,
+                        const GetSubTreeType& subtree) {
             // The parent of the config is always the inventory object, and may
             // be the associated chassis. If the parent is not itself a chassis
             // or board, the sensor is associated with the system chassis.
-            std::string parent = fs::path(path).parent_path().string();
+            std::string parent =
+                std::filesystem::path(path).parent_path().string();
             if (ec)
             {
                 // In case of error, set the default associations and
                 // initialize the association Interface.
-                setInventoryAssociation(association, parent, parent);
+                setInventoryAssociation(weakRef, parent, parent);
                 return;
             }
             setInventoryAssociation(
-                association, parent,
+                weakRef, parent,
                 findContainingChassis(parent, subtree).value_or(parent));
         },
         mapper::busName, mapper::path, mapper::interface, "GetSubTree",
@@ -808,7 +826,7 @@ std::optional<double> readFile(const std::string& thresholdFile,
 }
 
 std::optional<std::tuple<std::string, std::string, std::string>> splitFileName(
-    const fs::path& filePath)
+    const std::filesystem::path& filePath)
 {
     if (filePath.has_filename())
     {
@@ -876,8 +894,7 @@ void setupManufacturingModeMatch(sdbusplus::asio::connection& conn)
                 {
                     if (debug)
                     {
-                        std::cerr << "error getting  SpecialMode property "
-                                  << "\n";
+                        lg2::error("error getting SpecialMode property");
                     }
                     return;
                 }
@@ -916,8 +933,9 @@ void setupManufacturingModeMatch(sdbusplus::asio::connection& conn)
             {
                 if (debug)
                 {
-                    std::cerr << "error getting  SpecialMode status "
-                              << ec.message() << "\n";
+                    lg2::error(
+                        "error getting SpecialMode status: '{ERROR_MESSAGE}'",
+                        "ERROR_MESSAGE", ec.message());
                 }
                 return;
             }

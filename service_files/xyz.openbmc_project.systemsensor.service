@@ -5,9 +5,11 @@ Requires=xyz.openbmc_project.EntityManager.service
 After=xyz.openbmc_project.EntityManager.service
 
 [Service]
+Type=dbus
+BusName=xyz.openbmc_project.SystemSensor
 Restart=always
 RestartSec=5
-ExecStart=/usr/bin/watchdogsensor
+ExecStart=/usr/libexec/dbus-sensors/watchdogsensor
 
 [Install]
 WantedBy=multi-user.target

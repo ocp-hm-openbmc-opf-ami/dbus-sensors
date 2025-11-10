@@ -6,12 +6,21 @@
 #include "Thresholds.hpp"
 #include "Utils.hpp"
 
+#include <phosphor-logging/lg2.hpp>
+#include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 #include <sdbusplus/exception.hpp>
 
+#include <array>
+#include <cerrno>
+#include <cmath>
+#include <cstddef>
+#include <cstdlib>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 constexpr size_t sensorFailedPollTimeMs = 5000;
@@ -69,13 +78,18 @@ struct Sensor
         configInterface(configInterfaceName(objectType)),
         isSensorSettable(isSettable), isValueMutable(isMutable), maxValue(max),
         minValue(min), thresholds(std::move(thresholdData)),
-        hysteresisTrigger((max - min) * 0.01),
-        hysteresisPublish((max - min) * 0.0001), dbusConnection(conn),
-        readState(readState),
+        dbusConnection(conn), readState(readState),
         instrumentation(enableInstrumentation
                             ? std::make_unique<SensorInstrumentation>()
                             : nullptr)
-    {}
+    {
+        // These inits confuse tidy because they're doing constructor params
+        // math on member variables that tidy suggests should be default
+        // initialized. NOLINTBEGIN(cppcoreguidelines-prefer-member-initializer)
+        hysteresisTrigger = (max - min) * 0.01;
+        hysteresisPublish = (max - min) * 0.0001;
+        // NOLINTEND(cppcoreguidelines-prefer-member-initializer)
+    }
     virtual ~Sensor() = default;
     virtual void checkThresholds() = 0;
     std::string name;
@@ -102,8 +116,8 @@ struct Sensor
     bool hadValidValue = false;
     bool overriddenState = false;
     bool internalSet = false;
-    double hysteresisTrigger;
-    double hysteresisPublish;
+    double hysteresisTrigger = 1.0;
+    double hysteresisPublish = 1.0;
     std::shared_ptr<sdbusplus::asio::connection> dbusConnection;
     PowerState readState;
     size_t errCount{0};
@@ -128,7 +142,7 @@ struct Sensor
         size_t index = static_cast<size_t>(lev);
         if (index >= thresholdInterfaces.size())
         {
-            std::cout << "Unknown threshold level \n";
+            lg2::info("Unknown threshold level");
             return nullptr;
         }
         std::shared_ptr<sdbusplus::asio::dbus_interface> interface =
@@ -154,9 +168,10 @@ struct Sensor
         // Show constants if first reading (even if unsuccessful)
         if ((inst.numCollectsGood == 0) && (inst.numCollectsMiss == 0))
         {
-            std::cerr << "Sensor " << name << ": Configuration min=" << minValue
-                      << ", max=" << maxValue << ", type=" << configInterface
-                      << ", path=" << configurationPath << "\n";
+            lg2::info(
+                "Sensor name: {NAME}, min: {MIN}, max: {MAX}, type: {TYPE}, path: {PATH}",
+                "NAME", name, "MIN", minValue, "MAX", maxValue, "TYPE",
+                configInterface, "PATH", configurationPath);
         }
 
         // Sensors can use "nan" to indicate unavailable reading
@@ -165,12 +180,12 @@ struct Sensor
             // Only show this if beginning a new streak
             if (inst.numStreakMisses == 0)
             {
-                std::cerr << "Sensor " << name
-                          << ": Missing reading, Reading counts good="
-                          << inst.numCollectsGood
-                          << ", miss=" << inst.numCollectsMiss
-                          << ", Prior good streak=" << inst.numStreakGreats
-                          << "\n";
+                lg2::warning(
+                    "Sensor name: {NAME}, Missing reading, Reading counts good= {NUM_COLLECTS_GOOD},"
+                    " miss= {NUM_COLLECTS_MISS}, Prior good streak= {NUM_STREAK_GREATS}",
+                    "NAME", name, "NUM_COLLECTS_GOOD", inst.numCollectsGood,
+                    "NUM_COLLECTS_MISS", inst.numCollectsMiss,
+                    "NUM_STREAK_GREATS", inst.numStreakGreats);
             }
 
             inst.numStreakGreats = 0;
@@ -183,18 +198,19 @@ struct Sensor
         // Only show this if beginning a new streak and not the first time
         if ((inst.numStreakGreats == 0) && (inst.numCollectsGood != 0))
         {
-            std::cerr << "Sensor " << name
-                      << ": Recovered reading, Reading counts good="
-                      << inst.numCollectsGood
-                      << ", miss=" << inst.numCollectsMiss
-                      << ", Prior miss streak=" << inst.numStreakMisses << "\n";
+            lg2::info(
+                "Sensor name: {NAME}, Recovered reading, Reading counts good= {NUM_COLLECTS_GOOD},"
+                " miss= {NUM_COLLECTS_MISS}, Prior good streak= {NUM_STREAK_GREATS}",
+                "NAME", name, "NUM_COLLECTS_GOOD", inst.numCollectsGood,
+                "NUM_COLLECTS_MISS", inst.numCollectsMiss, "NUM_STREAK_GREATS",
+                inst.numStreakGreats);
         }
 
         // Initialize min/max if the first successful reading
         if (inst.numCollectsGood == 0)
         {
-            std::cerr << "Sensor " << name << ": First reading=" << readValue
-                      << "\n";
+            lg2::info("Sensor name: {NAME}, First reading: {VALUE}", "NAME",
+                      name, "VALUE", readValue);
 
             inst.minCollected = readValue;
             inst.maxCollected = readValue;
@@ -207,16 +223,16 @@ struct Sensor
         // Only provide subsequent output if new min/max established
         if (readValue < inst.minCollected)
         {
-            std::cerr << "Sensor " << name << ": Lowest reading=" << readValue
-                      << "\n";
+            lg2::info("Sensor name: {NAME}, Lowest reading: {VALUE}", "NAME",
+                      name, "VALUE", readValue);
 
             inst.minCollected = readValue;
         }
 
         if (readValue > inst.maxCollected)
         {
-            std::cerr << "Sensor " << name << ": Highest reading=" << readValue
-                      << "\n";
+            lg2::info("Sensor name: {NAME}, Highest reading: {VALUE}", "NAME",
+                      name, "VALUE", readValue);
 
             inst.maxCollected = readValue;
         }
@@ -285,7 +301,7 @@ struct Sensor
 
             if (!iface)
             {
-                std::cout << "trying to set uninitialized interface\n";
+                lg2::info("trying to set uninitialized interface");
                 continue;
             }
 
@@ -323,7 +339,7 @@ struct Sensor
         }
         if (!sensorInterface->initialize())
         {
-            std::cerr << "error initializing value interface\n";
+            lg2::error("error initializing value interface");
         }
 
         for (auto& thresIface : thresholdInterfaces)
@@ -332,7 +348,7 @@ struct Sensor
             {
                 if (!thresIface->initialize(true))
                 {
-                    std::cerr << "Error initializing threshold interface \n";
+                    lg2::error("Error initializing threshold interface");
                 }
             }
         }
@@ -346,8 +362,8 @@ struct Sensor
             valueMutabilityInterface->register_property("Mutable", true);
             if (!valueMutabilityInterface->initialize())
             {
-                std::cerr
-                    << "error initializing sensor value mutability interface\n";
+                lg2::error(
+                    "error initializing sensor value mutability interface");
                 valueMutabilityInterface = nullptr;
             }
         }
@@ -470,7 +486,7 @@ struct Sensor
         errCount++;
         if (errCount == errorThreshold)
         {
-            std::cerr << "Sensor " << name << " reading error!\n";
+            lg2::error("Sensor name: {NAME}, reading error!", "NAME", name);
             markFunctional(false);
         }
     }
@@ -528,8 +544,8 @@ struct Sensor
             if (interface &&
                 !(interface->set_property(dbusPropertyName, newValue)))
             {
-                std::cerr << "error setting property " << dbusPropertyName
-                          << " to " << newValue << "\n";
+                lg2::error("error setting property '{NAME}' to '{VALUE}'",
+                           "NAME", dbusPropertyName, "VALUE", newValue);
             }
         }
     }

@@ -20,6 +20,7 @@
 #include "Utils.hpp"
 #include "sensor.hpp"
 
+#include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 
@@ -168,8 +169,7 @@ PwmSensor::PwmSensor(const std::string& pwmname, const std::string& sysPath,
         valueMutabilityInterface->register_property("Mutable", true);
         if (!valueMutabilityInterface->initialize())
         {
-            std::cerr
-                << "error initializing sensor value mutability interface\n";
+            lg2::error("error initializing sensor value mutability interface");
             valueMutabilityInterface = nullptr;
         }
     }
@@ -212,12 +212,14 @@ uint32_t PwmSensor::getValue(bool errThrow)
     std::ifstream ref(sysPath);
     if (!ref.good())
     {
-        return -1;
+        lg2::error("Error opening '{PATH}'", "PATH", sysPath);
+        return 0;
     }
     std::string line;
     if (!std::getline(ref, line))
     {
-        return -1;
+        lg2::error("Error reading pwm at '{PATH}'", "PATH", sysPath);
+        return 0;
     }
     try
     {
@@ -226,7 +228,7 @@ uint32_t PwmSensor::getValue(bool errThrow)
     }
     catch (const std::invalid_argument&)
     {
-        std::cerr << "Error reading pwm at " << sysPath << "\n";
+        lg2::error("Error converting pwm");
         // throw if not initial read to be caught by dbus bindings
         if (errThrow)
         {

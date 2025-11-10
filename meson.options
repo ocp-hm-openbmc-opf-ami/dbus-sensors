@@ -1,29 +1,199 @@
-option('adc', type: 'feature', value: 'enabled', description: 'Enable ADC sensor.',)
-option('dbus-adc', type: 'feature', value: 'enabled', description: 'Enable D-Bus ADC sensor.',)
-option('intel-cpu', type: 'feature', value: 'enabled', description: 'Enable CPU sensor.',)
-option('exit-air', type: 'feature', value: 'enabled', description: 'Enable exit air sensor.',)
-option('fan', type: 'feature', value: 'enabled', description: 'Enable fan sensor.',)
-option('hwmon-temp', type: 'feature', value: 'enabled', description: 'Enable HWMON temperature sensor.',)
-option('intrusion', type: 'feature', value: 'enabled', description: 'Enable intrusion sensor.',)
-option('ipmb', type: 'feature', value: 'enabled', description: 'Enable IPMB sensor.',)
-option('mcu', type: 'feature', value: 'enabled', description: 'Enable MCU sensor.',)
-option('nvme', type: 'feature', value: 'enabled', description: 'Enable NVMe sensor.',)
-option('psu', type: 'feature', value: 'enabled', description: 'Enable PSU sensor.',)
-option('external', type: 'feature', value: 'enabled', description: 'Enable External sensor.',)
-option('powerunit', type: 'feature', value: 'disabled', description: 'Enable powerunit status sensor.',)
-option('digital', type: 'feature', value: 'disabled', description: 'Enable digital discrete sensor',)
-option('tests', type: 'feature', value: 'enabled', description: 'Build tests.',)
-option('validate-unsecure-feature', type : 'feature', value : 'disabled', description : 'Enables unsecure features required by validation. Note: mustbe turned off for production images.',)
-option('insecure-sensor-override', type : 'feature', value : 'disabled', description : 'Enables Sensor override feature without any check.',)
-option('procstatus', type: 'feature', value: 'enabled', description: 'Enable processor status sensor.',)
-option('system', type: 'feature', value: 'disabled', description: 'Enable system sensor watchdog2 status.',)
-option('acpisystem', type: 'feature', value: 'disabled', description: 'Enable acpi system status sensor.',)
-option('psustatus', type: 'feature', value: 'disabled', description: 'Enable PSU Status sensor.',)
-option('osstatus', type: 'feature', value: 'disabled', description: 'Enable OS Critical sensor.',)
-option('logstatus', type: 'feature', value: 'disabled', description: 'Enable Event Logging sensor.',)
-option('batterystatus', type: 'feature', value: 'disabled', description: 'Enable Battery sensor.',)
-option('acpidevice', type: 'feature', value: 'disabled', description: 'Enable acpi device status sensor.',)
-option('bmc-firmware-health', type: 'feature', value: 'disabled', description: 'Enable Management Subsystem Health sensor.',)
-option('damaged-sensor', type: 'feature', value: 'disabled', description: 'Enable feature to list damaged or wrongly configured sensor ',)
-option('apisensor', type: 'feature', value: 'disabled', description: 'Enable API sensor.',)
-option('num_apisensor_reactors',type: 'integer',value: 5,description: 'Number of apisensor@X.service files to install')
+option(
+    'adc',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable ADC sensor.',
+)
+option(
+    'dbus-adc',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable D-Bus ADC sensor.',
+)
+option(
+    'intel-cpu',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable CPU sensor.',
+)
+option(
+    'exit-air',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable exit air sensor.',
+)
+option(
+    'fan',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable fan sensor.',
+)
+option(
+    'hwmon-temp',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable HWMON temperature sensor.',
+)
+option(
+    'intrusion',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable intrusion sensor.',
+)
+option(
+    'ipmb',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable IPMB sensor.',
+)
+option(
+    'mctp',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable MCTP endpoint management',
+)
+option(
+    'mcu',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable MCU sensor.',
+)
+option(
+    'nvme',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable NVMe sensor.',
+)
+option(
+    'psu',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable PSU sensor.',
+)
+option(
+    'nvidia-gpu',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable GPU sensor.',
+)
+option(
+    'external',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable External sensor.',
+)
+option(
+    'powerunit',
+    type: 'feature',
+    value: 'disabled',
+    description: 'Enable powerunit status sensor.',
+)
+option(
+    'digital',
+    type: 'feature',
+    value: 'disabled',
+    description: 'Enable digital discrete sensor.',
+)
+option('tests', type: 'feature', value: 'enabled', description: 'Build tests.')
+option(
+    'validate-unsecure-feature',
+    type: 'feature',
+    value: 'disabled',
+    description: 'Enables unsecure features required by validation. Note: mustbe turned off for production images.',
+)
+option(
+    'insecure-sensor-override',
+    type: 'feature',
+    value: 'disabled',
+    description: 'Enables Sensor override feature without any check.',
+)
+option(
+    'procstatus',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable processor status sensor.',
+)
+option(
+    'system',
+    type: 'feature',
+    value: 'disabled',
+    description: 'Enable system sensor watchdog2 status.',
+)
+option(
+    'acpisystem',
+    type: 'feature',
+    value: 'disabled',
+    description: 'Enable acpi system status sensor.',
+)
+option(
+    'psustatus',
+    type: 'feature',
+    value: 'disabled',
+    description: 'Enable PSU Status sensor.',
+)
+option(
+    'osstatus',
+    type: 'feature',
+    value: 'disabled',
+    description: 'Enable OS Critical sensor.',
+)
+option(
+    'logstatus',
+    type: 'feature',
+    value: 'disabled',
+    description: 'Enable Event Logging sensor.',
+)
+option(
+    'batterystatus',
+    type: 'feature',
+    value: 'disabled',
+    description: 'Enable Battery sensor.',
+)
+option(
+    'acpidevice',
+    type: 'feature',
+    value: 'disabled',
+    description: 'Enable acpi device status sensor.',
+)
+option(
+    'bmc-firmware-health',
+    type: 'feature',
+    value: 'disabled',
+    description: 'Enable Event Logging sensor.',
+)
+option(
+    'damaged-sensor',
+    type: 'feature',
+    value: 'disabled',
+    description: 'Enable feature to list damaged or wrongly configured sensor.',
+)
+option(
+    'leakdetector',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable Liquid Leak Detector.',
+)
+option(
+    'smbpbi',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable SMBPBI sensor.',
+)
+option(
+    'cable-monitor',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable Cable monitor.',
+)
+option(
+    'apisensor',
+    type: 'feature',
+    value: 'disabled',
+    description: 'Enable API sensor.',
+)
+option(
+    'num_apisensor_reactors',
+    type: 'integer',
+    value: 5,
+    description: 'Number of apisensor@X.service files to install',
+)

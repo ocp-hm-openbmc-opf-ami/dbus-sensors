@@ -5,9 +5,11 @@ Requires=xyz.openbmc_project.EntityManager.service
 After=xyz.openbmc_project.EntityManager.service
 
 [Service]
+Type=dbus
+BusName=xyz.openbmc_project.OSSStatusSensor
 Restart=always
 RestartSec=5
-ExecStart=/usr/bin/osstatus
+ExecStart=/usr/libexec/dbus-sensors/osstatus
 
 [Install]
 WantedBy=multi-user.target

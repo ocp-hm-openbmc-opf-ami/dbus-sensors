@@ -7,9 +7,11 @@ Requires=xyz.openbmc_project.adcsensor.service
 After=xyz.openbmc_project.adcsensor.service
 
 [Service]
+Type=dbus
+BusName=xyz.openbmc_project.BatteryStatus
 Restart=always
 RestartSec=5
-ExecStart=/usr/bin/batterystatus
+ExecStart=/usr/libexec/dbus-sensors/batterystatus
 
 [Install]
 WantedBy=multi-user.target

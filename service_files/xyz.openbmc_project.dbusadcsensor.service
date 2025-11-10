@@ -11,9 +11,11 @@ After=xyz.openbmc_project.EntityManager.service \
     xyz.openbmc_project.scm_i2c_memory_map.service
 
 [Service]
+Type=dbus
+BusName=xyz.openbmc_project.DBusADCSensor
 Restart=always
 RestartSec=5
-ExecStart=/usr/bin/dbusadcsensor
+ExecStart=/usr/libexec/dbus-sensors/dbusadcsensor
 
 [Install]
 WantedBy=multi-user.target

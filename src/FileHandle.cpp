@@ -3,6 +3,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <phosphor-logging/lg2.hpp>
+
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -40,7 +42,7 @@ FileHandle::~FileHandle()
         int r = close(fd);
         if (r < 0)
         {
-            std::cerr << "Failed to close fd " << std::to_string(fd);
+            lg2::error("Failed to close fd: '{FD}'", "FD", fd);
         }
     }
 }

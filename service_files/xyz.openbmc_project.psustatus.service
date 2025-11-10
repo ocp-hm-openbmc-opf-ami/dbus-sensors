@@ -5,9 +5,11 @@ Requires=xyz.openbmc_project.EntityManager.service
 After=xyz.openbmc_project.EntityManager.service
 
 [Service]
+Type=dbus
+BusName=xyz.openbmc_project.PsuStatus
 Restart=always
 RestartSec=5
-ExecStart=/usr/bin/psustatus
+ExecStart=/usr/libexec/dbus-sensors/psustatus
 
 [Install]
 WantedBy=multi-user.target
