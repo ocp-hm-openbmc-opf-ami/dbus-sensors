@@ -20,34 +20,31 @@ thresholds_a = static_library(
 )
 
 thresholds_dep = declare_dependency(
+    include_directories: ['.'],
     link_with: [thresholds_a],
     dependencies: default_deps,
 )
 
 utils_a = static_library(
     'utils_a',
-    [
-        'FileHandle.cpp',
-        'SensorPaths.cpp',
-        'Utils.cpp',
-    ],
+    ['FileHandle.cpp', 'SensorPaths.cpp', 'Utils.cpp'],
     dependencies: default_deps,
 )
 
 utils_dep = declare_dependency(
+    include_directories: ['.'],
     link_with: [utils_a],
     dependencies: [sdbusplus],
 )
 
 devicemgmt_a = static_library(
     'devicemgmt_a',
-    [
-        'DeviceMgmt.cpp',
-    ],
+    ['DeviceMgmt.cpp'],
     dependencies: default_deps,
 )
 
 devicemgmt_dep = declare_dependency(
+    include_directories: ['.'],
     link_with: [devicemgmt_a],
     dependencies: default_deps,
 )
@@ -59,8 +56,47 @@ pwmsensor_a = static_library(
 )
 
 pwmsensor_dep = declare_dependency(
+    include_directories: ['.'],
     link_with: [pwmsensor_a],
     dependencies: [default_deps, thresholds_dep],
+)
+
+systemdinterface_src = files('SystemdInterface.cpp')
+
+gpiointerface_a = static_library(
+    'gpiointerface_a',
+    'GPIOInterface.cpp',
+    dependencies: [default_deps, gpiodcxx],
+)
+
+gpiointerface_dep = declare_dependency(
+    include_directories: ['.'],
+    link_with: [gpiointerface_a],
+    dependencies: default_deps,
+)
+
+entitymanagerinterface_a = static_library(
+    'entitymanagerinterface_a',
+    'EntityManagerInterface.cpp',
+    dependencies: default_deps,
+)
+
+entitymanagerinterface_dep = declare_dependency(
+    include_directories: ['.'],
+    link_with: [entitymanagerinterface_a],
+    dependencies: default_deps,
+)
+
+notifywatch_a = static_library(
+    'notifywatch_a',
+    'NotifyWatch.cpp',
+    dependencies: default_deps,
+)
+
+notifywatch_dep = declare_dependency(
+    include_directories: ['.'],
+    link_with: [notifywatch_a],
+    dependencies: default_deps,
 )
 
 peci_incdirs = []
@@ -70,347 +106,126 @@ endif
 
 if get_option('intel-cpu').allowed()
     peci_dep = dependency('libpeci', required: true)
+    subdir('intel-cpu')
+endif
+
+if get_option('smbpbi').allowed()
+    subdir('smbpbi')
+endif
+
+if get_option('dbus-adc').allowed()
+    subdir('dbus-adc')
 endif
 
 if get_option('adc').allowed()
-    executable(
-        'adcsensor',
-        'ADCSensor.cpp',
-        'ADCSensorMain.cpp',
-        dependencies: [
-            default_deps,
-            gpiodcxx,
-            thresholds_dep,
-            utils_dep,
-        ],
-        install: true,
-    )
-endif
-
-if get_option('dbus-adc').enabled()
-    executable(
-        'dbusadcsensor',
-        'DBusADCSensor.cpp',
-        'DBusADCSensorMain.cpp',
-        dependencies: [
-            default_deps,
-            gpiodcxx,
-            thresholds_dep,
-           utils_dep,
-        ],
-        install: true,
-    )
-endif
-
-
-if get_option('intel-cpu').allowed()
-    executable(
-        'intelcpusensor',
-        'IntelCPUSensorMain.cpp',
-        'IntelCPUSensor.cpp',
-        dependencies: [
-            default_deps,
-            gpiodcxx,
-	    libudev,
-            thresholds_dep,
-            utils_dep,
-            peci_dep,
-        ],
-        include_directories: peci_incdirs,
-        install: true,
-    )
+    subdir('adc')
 endif
 
 if get_option('exit-air').allowed()
-    executable(
-        'exitairtempsensor',
-        'ExitAirTempSensor.cpp',
-        dependencies: [
-            default_deps,
-            thresholds_dep,
-            utils_dep,
-        ],
-        install: true,
-    )
+    subdir('exit-air')
 endif
 
 if get_option('fan').allowed()
-    executable(
-        'fansensor',
-        'FanMain.cpp',
-        'TachSensor.cpp',
-        'PwmSensor.cpp',
-        dependencies: [
-            default_deps,
-            gpiodcxx,
-            thresholds_dep,
-            utils_dep,
-        ],
-        install: true,
-    )
+    subdir('fan')
 endif
 
 if get_option('hwmon-temp').allowed()
-    executable(
-        'hwmontempsensor',
-        'HwmonTempMain.cpp',
-        'HwmonTempSensor.cpp',
-        dependencies: [
-            default_deps,
-            devicemgmt_dep,
-            thresholds_dep,
-            utils_dep,
-        ],
-        install: true,
-    )
+    subdir('hwmon-temp')
 endif
 
 if get_option('intrusion').allowed()
-    executable(
-        'intrusionsensor',
-        'ChassisIntrusionSensor.cpp',
-        'IntrusionSensorMain.cpp',
-        dependencies: [
-            default_deps,
-            gpiodcxx,
-            i2c,
-            utils_dep,
-        ],
-        install: true,
-    )
+    subdir('intrusion')
 endif
 
 if get_option('ipmb').allowed()
-    executable(
-        'ipmbsensor',
-        'IpmbSensorMain.cpp',
-        'IpmbSensor.cpp',
-        'IpmbSDRSensor.cpp',
-        dependencies: [
-            default_deps,
-            thresholds_dep,
-            utils_dep,
-        ],
-        install: true,
-    )
+    subdir('ipmb')
+endif
+
+if get_option('mctp').allowed()
+    subdir('mctp')
 endif
 
 if get_option('mcu').allowed()
-    executable(
-        'mcutempsensor',
-        'MCUTempSensor.cpp',
-        dependencies: [
-            default_deps,
-            i2c,
-            thresholds_dep,
-            utils_dep,
-        ],
-        install: true,
-    )
+    subdir('mcu')
 endif
 
 if get_option('nvme').allowed()
-    nvme_srcs = files('NVMeSensor.cpp', 'NVMeSensorMain.cpp')
-    nvme_srcs += files('NVMeBasicContext.cpp')
-
-    nvme_deps = [default_deps, i2c, thresholds_dep, utils_dep, threads]
-
-    executable(
-        'nvmesensor',
-        sources: nvme_srcs,
-        dependencies: nvme_deps,
-        install: true,
-    )
+    subdir('nvme')
 endif
 
 if get_option('psu').allowed()
-    executable(
-        'psusensor',
-        'PSUEvent.cpp',
-        'PSUSensor.cpp',
-        'PSUSensorMain.cpp',
-        dependencies: [
-            default_deps,
-            devicemgmt_dep,
-            pwmsensor_dep,
-            thresholds_dep,
-            utils_dep,
-        ],
-        install: true,
-    )
+    subdir('psu')
+endif
+
+if get_option('nvidia-gpu').allowed()
+    subdir('nvidia-gpu')
 endif
 
 if get_option('external').allowed()
-    executable(
-        'externalsensor',
-        'ExternalSensor.cpp',
-        'ExternalSensorMain.cpp',
-        dependencies: [
-            default_deps,
-            thresholds_dep,
-            utils_dep,
-        ],
-        install: true,
-    )
+    subdir('external')
 endif
 
-if get_option('procstatus').enabled()
-    executable(
-        'processorstatus',
-        'ProcessorStatus.cpp',
-        'ProcessorStatusMain.cpp',
-        dependencies: [
-            default_deps,
-            gpiodcxx,
-            utils_dep,
-        ],
-        install: true,
-    )
+if get_option('tests').allowed()
+    subdir('tests')
 endif
 
-if get_option('system').enabled()
-    executable(
-        'watchdogsensor',
-        'WatchdogSensor.cpp',
-        'SystemSensorMain.cpp',
-        dependencies: [
-            default_deps,
-            utils_dep,
-        ],
-        install: true,
-    )
+if get_option('leakdetector').allowed()
+    subdir('leakdetector')
 endif
 
-if get_option('powerunit').enabled()
-    executable(
-        'powerunitstatus',
-        'PowerUnit.cpp',
-        'PowerUnitMain.cpp',
-        dependencies: [
-            default_deps,
-            utils_dep,
-        ],
-        install: true,
-    )
+if get_option('cable-monitor').allowed()
+    subdir('cable-monitor')
 endif
 
-if get_option('acpisystem').enabled()
-    executable(
-        'acpisystemstatus',
-        'ACPISystemStatus.cpp',
-        'ACPISystemStatusMain.cpp',
-        dependencies: [
-            default_deps,
-            utils_dep,
-        ],
-        install: true,
-    )
+if get_option('procstatus').allowed()
+    subdir('procstatus')
 endif
 
-if get_option('psustatus').enabled()
-    executable(
-        'psustatus',
-        'PsuStatus.cpp',
-        'PsuStatusMain.cpp',
-        dependencies: [
-            default_deps,
-            i2c,
-            utils_dep,
-        ],
-        install: true,
-        )
+if get_option('system').allowed()
+    subdir('system')
 endif
 
-if get_option('osstatus').enabled()
-    executable(
-        'osstatus',
-        'OSStatus.cpp',
-        'OSStatusMain.cpp',
-        dependencies: [
-            default_deps,
-            utils_dep,
-        ],
-        install: true,
-        )
+if get_option('powerunit').allowed()
+    subdir('powerunit')
 endif
 
-if get_option('batterystatus').enabled()
-    executable(
-        'batterystatus',
-        'BatteryStatus.cpp',
-        'BatteryStatusMain.cpp',
-        dependencies: [
-            default_deps,
-            utils_dep,
-        ],
-        install: true,
-    )
+if get_option('acpisystem').allowed()
+    subdir('acpisystem')
 endif
 
-if get_option('acpidevice').enabled()
-    executable(
-        'acpidevicestatus',
-        'ACPIDeviceStatus.cpp',
-        'ACPIDeviceStatusMain.cpp',
-        dependencies: [
-            default_deps,
-            utils_dep,
-        ],
-        install: true,
-    )
+if get_option('psustatus').allowed()
+    subdir('psustatus')
 endif
 
-if get_option('digital').enabled()
-    executable(
-        'digitaldiscrete',
-        'DigitalDiscrete.cpp',
-        'DigitalDiscreteMain.cpp',
-        dependencies: [
-            default_deps,
-            utils_dep,
-        ],
-        install: true,
-    )
+if get_option('osstatus').allowed()
+    subdir('osstatus')
 endif
 
-if get_option('bmc-firmware-health').enabled()
-     executable(
-         'bmcfirmwarehealth',
-         'BMCFirmwareHealth.cpp',
-         'BMCFirmwareHealthMain.cpp',
-         dependencies: [
-             default_deps,
-             utils_dep,
-         ],
-         install: true,
-     )
- endif
+if get_option('batterystatus').allowed()
+    subdir('batterystatus')
+endif
+
+if get_option('acpidevice').allowed()
+    subdir('acpidevice')
+endif
+
+if get_option('digital').allowed()
+    subdir('digital')
+endif
+
+if get_option('bmc-firmware-health').allowed()
+    subdir('bmc-firmware-health')
+endif
 
 if get_option('damaged-sensor').allowed()
-    executable(
-        'damagedsensor',
-        'DamagedMain.cpp',
-        'DamagedSensor.cpp',
-        dependencies: [
-            default_deps,
-            devicemgmt_dep,
-            thresholds_dep,
-            utils_dep,
-        ],
-        install: true,
-    )
+    subdir('damaged-sensor')
 endif
 
-if get_option('logstatus').enabled()
-    executable(
-        'logstatus',
-        'LoggingStatus.cpp',
-        'LoggingStatusMain.cpp',
-        dependencies: [
-            default_deps,
-            utils_dep,
-        ],
-        install: true,
-    )
+if get_option('logstatus').allowed()
+    subdir('logstatus')
+endif
+
+if get_option('apisensor').allowed()
+    subdir('apisensor')
 endif
 

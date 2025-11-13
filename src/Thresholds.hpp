@@ -4,8 +4,12 @@
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/steady_timer.hpp>
-#include <nlohmann/json.hpp>
+#include <sdbusplus/asio/connection.hpp>
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <list>
 #include <memory>
 #include <string>
@@ -128,7 +132,8 @@ bool parseThresholdsFromConfig(
 bool parseThresholdsFromAttr(
     std::vector<thresholds::Threshold>& thresholdVector,
     const std::string& inputPath, const double& scaleFactor,
-    const double& offset = 0);
+    const double& offset = 0,
+    const double& hysteresis = std::numeric_limits<double>::quiet_NaN());
 
 bool parseThresholdsFromAttr_CPU(
     std::vector<thresholds::Threshold>& thresholdVector,
@@ -140,7 +145,8 @@ constexpr int PSU_ADDR1 = 0x58;
 constexpr int PSU_ADDR2 = 0x59;
 constexpr int PSU_ADDR3 = 0x5A;
 
-struct PSUData {
+struct PSUData
+{
     int max_power;
 };
 

@@ -2,11 +2,25 @@
 
 #include "Utils.hpp"
 
-#include <boost/container/flat_map.hpp>
+#include <strings.h>
 
+#include <boost/algorithm/string/replace.hpp>
+#include <boost/container/flat_map.hpp>
+#include <phosphor-logging/lg2.hpp>
+#include <sdbusplus/asio/connection.hpp>
+#include <sdbusplus/bus/match.hpp>
+#include <sdbusplus/message.hpp>
+
+#include <cstddef>
+#include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
-#include <string_view>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <variant>
+#include <vector>
 
 struct I2CDeviceType
 {
@@ -107,8 +121,8 @@ boost::container::flat_map<std::string,
                 std::get_if<std::string>(&findSensorName->second);
             if (sensorName == nullptr)
             {
-                std::cerr << "Unable to find sensor name " << name
-                          << " on path " << path.str << "\n";
+                lg2::info("Unable to find '{NAME}' on '{PATH}'", "NAME", name,
+                          "PATH", path.str);
                 continue;
             }
 
@@ -146,8 +160,8 @@ boost::container::flat_map<std::string,
                 {
                     if (debugEnabled)
                     {
-                        std::cerr << "Clearing out previous instance for "
-                                  << path.str << "\n";
+                        lg2::info("Clearing out previous instance for '{PATH}'",
+                                  "PATH", path.str);
                     }
                     I2CDevice tmp(*params);
                 }
@@ -163,10 +177,10 @@ boost::container::flat_map<std::string,
                 {
                     if (debugEnabled)
                     {
-                        std::cerr
-                            << "Failed to instantiate " << params->type->name
-                            << " at address " << params->address << " on bus "
-                            << params->bus << "\n";
+                        lg2::error(
+                            "Failed to instantiate '{NAME}' at address '{ADDR}' on bus '{BUS}'",
+                            "NAME", params->type->name, "ADDR", params->address,
+                            "BUS", params->bus);
                     }
                 }
             }

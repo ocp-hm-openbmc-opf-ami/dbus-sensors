@@ -28,6 +28,7 @@ add_project_arguments(
     '-DBOOST_ALLOW_DEPRECATED_HEADERS',
     '-DBOOST_ASIO_HAS_IO_URING',
     '-DBOOST_ASIO_DISABLE_EPOLL',
+    '-DFEATURE_APISENSOR_SUPPORT',
     language: 'cpp',
 )
 
@@ -38,9 +39,10 @@ uring = dependency('liburing', include_type: 'system')
 nlohmann_json_dep = dependency('nlohmann_json', include_type: 'system')
 gpiodcxx = dependency('libgpiodcxx', default_options: ['bindings=cxx'])
 boost = dependency('boost', version: '>=1.83.0', include_type: 'system')
-sdbusplus = dependency('sdbusplus', include_type: 'system')
+sdbusplus = dependency('sdbusplus')
 phosphor_logging_dep = dependency('phosphor-logging')
 libudev = dependency('libudev', required : false, include_type: 'system')
+libpsmapisensor = dependency('libpsmapisensor', required : false , include_type: 'system')
 boost_dep = dependency(
     'boost',
     modules: ['coroutine'],
@@ -53,11 +55,8 @@ default_deps = [
     phosphor_logging_dep,
     sdbusplus,
     uring,
+    libpsmapisensor,
 ]
 
 subdir('service_files')
 subdir('src')
-
-if not get_option('tests').disabled()
-    subdir('tests')
-endif

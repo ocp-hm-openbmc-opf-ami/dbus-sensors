@@ -8,6 +8,7 @@
 #include <boost/asio/error.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/container/flat_map.hpp>
+#include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 #include <sdbusplus/exception.hpp>
@@ -17,6 +18,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -33,42 +35,40 @@ namespace thresholds
 
 namespace fs = std::filesystem;
 
-static std::string format_i2c_address(int addr) {
+static std::string format_i2c_address(int addr)
+{
     std::ostringstream ss;
     ss << std::setw(4) << std::setfill('0') << std::hex << addr;
     return ss.str();
 }
 
-static std::string find_psu_hwmon_path() {
-
+static std::string find_psu_hwmon_path()
+{
     std::string i2c_path = "";
 
-    const std::string i2c_path1 = "/sys/bus/i2c/devices/" +
-                            std::to_string(PSU_BUS) + "-" +
-                            format_i2c_address(PSU_ADDR1) +
-                            "/hwmon";
+    const std::string i2c_path1 =
+        "/sys/bus/i2c/devices/" + std::to_string(PSU_BUS) + "-" +
+        format_i2c_address(PSU_ADDR1) + "/hwmon";
 
-    const std::string i2c_path2 = "/sys/bus/i2c/devices/" +
-                            std::to_string(PSU_BUS) + "-" +
-                            format_i2c_address(PSU_ADDR2) +
-                            "/hwmon";
+    const std::string i2c_path2 =
+        "/sys/bus/i2c/devices/" + std::to_string(PSU_BUS) + "-" +
+        format_i2c_address(PSU_ADDR2) + "/hwmon";
 
-    const std::string i2c_path3 = "/sys/bus/i2c/devices/" +
-                            std::to_string(PSU_BUS) + "-" +
-                            format_i2c_address(PSU_ADDR3) +
-                            "/hwmon";
+    const std::string i2c_path3 =
+        "/sys/bus/i2c/devices/" + std::to_string(PSU_BUS) + "-" +
+        format_i2c_address(PSU_ADDR3) + "/hwmon";
 
-    if(fs::exists(i2c_path1))
+    if (fs::exists(i2c_path1))
     {
-            i2c_path=i2c_path1;
+        i2c_path = i2c_path1;
     }
     else if (fs::exists(i2c_path2))
     {
-            i2c_path=i2c_path2;
+        i2c_path = i2c_path2;
     }
     else if (fs::exists(i2c_path3))
     {
-            i2c_path=i2c_path3;
+        i2c_path = i2c_path3;
     }
     else
     {
@@ -76,8 +76,10 @@ static std::string find_psu_hwmon_path() {
         return "";
     }
 
-    for (const auto& entry : fs::directory_iterator(i2c_path)) {
-        if (entry.path().filename().string().find("hwmon") == 0) {
+    for (const auto& entry : fs::directory_iterator(i2c_path))
+    {
+        if (entry.path().filename().string().find("hwmon") == 0)
+        {
             return entry.path();
         }
     }
@@ -85,33 +87,37 @@ static std::string find_psu_hwmon_path() {
     return "";
 }
 
-PSUData read_psu_max_power() {
 
+PSUData read_psu_max_power()
+{
     PSUData psu;
 
     psu.max_power = 0;
 
     std::string hwmon_path = find_psu_hwmon_path();
-    if (hwmon_path.empty()) {
+    if (hwmon_path.empty())
+    {
         std::cerr << "Failed to locate PSU hwmon interface\n";
         return psu;
     }
 
     std::ifstream name_file(hwmon_path + "/name");
-    if (!name_file) {
+    if (!name_file)
+    {
         std::cerr << "Failed to Open pmbus HWMOM Path\n";
         return psu;
     }
 
     std::ifstream power_file(hwmon_path + "/power1_rated_max");
-    if (!power_file) {
-            std::cerr << "Failed to Read CPU Rated Power Max\n";
-            return psu;
+    if (!power_file)
+    {
+        std::cerr << "Failed to Read CPU Rated Power Max\n";
+        return psu;
     }
 
     power_file >> psu.max_power;
 
-    psu.max_power = (psu.max_power/1000000);
+    psu.max_power = (psu.max_power / 1000000);
 
     return psu;
 }
@@ -145,9 +151,8 @@ static const std::unordered_map<std::string, std::string> labelToHwmonSuffix = {
     {"iout_oc_warn_limit", "max"},
 };
 
-static std::optional<double>
-    parseThresholdFromLabel(const std::string* sensorPathStr,
-                            const SensorBaseConfigMap& sensorData)
+static std::optional<double> parseThresholdFromLabel(
+    const std::string* sensorPathStr, const SensorBaseConfigMap& sensorData)
 {
     if (sensorPathStr == nullptr)
     {
@@ -234,8 +239,9 @@ bool parseThresholdsFromConfig(
         auto directionFind = cfg.find("Direction");
         if (severityFind == cfg.end() || directionFind == cfg.end())
         {
-            std::cerr << "Malformed threshold on configuration interface "
-                      << intf << "\n";
+            lg2::error(
+                "Malformed threshold on configuration interface: '{INTERFACE}'",
+                "INTERFACE", intf);
             return false;
         }
         unsigned int severity =
@@ -298,7 +304,7 @@ void persistThreshold(const std::string& path, const std::string& baseInterface,
                     auto labelFind = result.find("Label");
                     if (labelFind == result.end())
                     {
-                        std::cerr << "No label in threshold configuration\n";
+                        lg2::error("No label in threshold configuration");
                         return;
                     }
                     std::string label =
@@ -315,7 +321,7 @@ void persistThreshold(const std::string& path, const std::string& baseInterface,
                 if (valueFind == result.end() || severityFind == result.end() ||
                     directionFind == result.end())
                 {
-                    std::cerr << "Malformed threshold in configuration\n";
+                    lg2::error("Malformed threshold in configuration");
                     return;
                 }
                 unsigned int severity = std::visit(
@@ -334,8 +340,9 @@ void persistThreshold(const std::string& path, const std::string& baseInterface,
                     [](const boost::system::error_code& ec) {
                         if (ec)
                         {
-                            std::cerr
-                                << "Error setting threshold " << ec << "\n";
+                            lg2::error(
+                                "Error setting threshold: '{ERROR_MESSAGE}'",
+                                "ERROR_MESSAGE", ec.message());
                         }
                     },
                     entityManagerName, path, "org.freedesktop.DBus.Properties",
@@ -411,9 +418,11 @@ static std::vector<ChangeParam> checkThresholds(Sensor* sensor, double value)
                 thresholdChanges.emplace_back(threshold, true, value);
                 if (++cHiTrue < assertLogCount)
                 {
-                    std::cerr << "Sensor " << sensor->name << " high threshold "
-                              << threshold.value << " assert: value " << value
-                              << " raw data " << sensor->rawValue << "\n";
+                    lg2::info(
+                        "Sensor name: {NAME}, high threshold: {THRESHOLD}, "
+                        "assert value: {VALUE}, raw data: {RAW_DATA}",
+                        "NAME", sensor->name, "THRESHOLD", threshold.value,
+                        "VALUE", value, "RAW_DATA", sensor->rawValue);
                 }
             }
             else if (value < (threshold.value - threshold.hysteresis))
@@ -433,10 +442,11 @@ static std::vector<ChangeParam> checkThresholds(Sensor* sensor, double value)
                 thresholdChanges.emplace_back(threshold, true, value);
                 if (++cLoTrue < assertLogCount)
                 {
-                    std::cerr
-                        << "Sensor " << sensor->name << " low threshold "
-                        << threshold.value << " assert: value " << sensor->value
-                        << " raw data " << sensor->rawValue << "\n";
+                    lg2::info(
+                        "Sensor name: {NAME}, low threshold: {THRESHOLD}, "
+                        "assert value: {VALUE}, raw data: {RAW_DATA}",
+                        "NAME", sensor->name, "THRESHOLD", threshold.value,
+                        "VALUE", value, "RAW_DATA", sensor->rawValue);
                 }
             }
             else if (value > (threshold.value + threshold.hysteresis))
@@ -451,7 +461,7 @@ static std::vector<ChangeParam> checkThresholds(Sensor* sensor, double value)
         }
         else
         {
-            std::cerr << "Error determining threshold direction\n";
+            lg2::error("Error determining threshold direction");
         }
     }
 
@@ -462,10 +472,12 @@ static std::vector<ChangeParam> checkThresholds(Sensor* sensor, double value)
         cDebugThrottle = 0;
         if constexpr (debug)
         {
-            std::cerr << "checkThresholds: High T=" << cHiTrue
-                      << " F=" << cHiFalse << " M=" << cHiMidstate
-                      << ", Low T=" << cLoTrue << " F=" << cLoFalse
-                      << " M=" << cLoMidstate << "\n";
+            lg2::error("checkThresholds: High T= {HIGH_TRUE}, F= {HIGH_FALSE},"
+                       " M= {HIGH_MIDSTATE}, Low T= {LOW_TRUE}, F= {LOW_FALSE},"
+                       " M= {LOW_MIDSTATE}",
+                       "HIGH_TRUE", cHiTrue, "HIGH_FALSE", cHiFalse,
+                       "HIGH_MIDSTATE", cHiMidstate, "LOW_TRUE", cLoTrue,
+                       "LOW_FALSE", cLoFalse, "LOW_MIDSTATE", cLoMidstate);
         }
     }
 
@@ -514,7 +526,8 @@ void ThresholdTimer::startTimer(const std::weak_ptr<Sensor>& weakSensor,
         }
         if (ec)
         {
-            std::cerr << "timer error: " << ec.message() << "\n";
+            lg2::error("timer error: '{ERROR_MESSAGE}'", "ERROR_MESSAGE",
+                       ec.message());
             return;
         }
         if (sensorPtr->readingStateGood())
@@ -602,14 +615,14 @@ void assertThresholds(Sensor* sensor, double assertValue,
 
     if (!interface)
     {
-        std::cout << "trying to set uninitialized interface\n";
+        lg2::info("trying to set uninitialized interface");
         return;
     }
 
     std::string property = Sensor::propertyAlarm(level, direction);
     if (property.empty())
     {
-        std::cout << "Alarm property is empty \n";
+        lg2::info("Alarm property is empty");
         return;
     }
     bool propertyChanged =
@@ -628,13 +641,74 @@ void assertThresholds(Sensor* sensor, double assertValue,
         }
         catch (const sdbusplus::exception_t& e)
         {
-            std::cerr
-                << "Failed to send thresholdAsserted signal with assertValue\n";
+            lg2::error(
+                "Failed to send thresholdAsserted signal with assertValue");
         }
     }
 }
 
 bool parseThresholdsFromAttr(
+    std::vector<thresholds::Threshold>& thresholdVector,
+    const std::string& inputPath, const double& scaleFactor,
+    const double& offset, const double& hysteresis)
+{
+    const boost::container::flat_map<
+        std::string, std::vector<std::tuple<const char*, thresholds::Level,
+                                            thresholds::Direction, double>>>
+        map = {
+            {"average",
+             {
+                 std::make_tuple("average_min", Level::WARNING, Direction::LOW,
+                                 0.0),
+                 std::make_tuple("average_max", Level::WARNING, Direction::HIGH,
+                                 0.0),
+             }},
+            {"input",
+             {
+                 std::make_tuple("min", Level::WARNING, Direction::LOW, 0.0),
+                 std::make_tuple("max", Level::WARNING, Direction::HIGH, 0.0),
+                 std::make_tuple("lcrit", Level::CRITICAL, Direction::LOW, 0.0),
+                 std::make_tuple("crit", Level::CRITICAL, Direction::HIGH,
+                                 offset),
+             }},
+            {"cap",
+             {
+                 std::make_tuple("cap_max", Level::WARNING, Direction::HIGH,
+                                 0.0),
+             }},
+        };
+
+    if (auto fileParts = splitFileName(inputPath))
+    {
+        auto& [type, nr, item] = *fileParts;
+        if (map.contains(item))
+        {
+            for (const auto& t : map.at(item))
+            {
+                const auto& [suffix, level, direction, offset] = t;
+                auto attrPath =
+                    boost::replace_all_copy(inputPath, item, suffix);
+                // create threshold with value NaN if file exists
+                // read can fail because resource is busy
+                // This allows thresholds interfaces created during init
+                // values will be updated when resource is available later.
+                if (auto val = readFile(attrPath, scaleFactor, true))
+                {
+                    *val += offset;
+
+                    std::cout
+                        << "Threshold: " << attrPath << ": " << *val << "\n";
+
+                    thresholdVector.emplace_back(level, direction, *val,
+                                                 hysteresis);
+                }
+            }
+        }
+    }
+    return true;
+}
+
+bool parseThresholdsFromAttr_CPU(
     std::vector<thresholds::Threshold>& thresholdVector,
     const std::string& inputPath, const double& scaleFactor,
     const double& offset)
@@ -658,11 +732,16 @@ bool parseThresholdsFromAttr(
                  std::make_tuple("crit", Level::CRITICAL, Direction::HIGH,
                                  offset),
              }},
-             {"cap",
+            {"cap",
              {
-                 std::make_tuple("cap_max", Level::WARNING, Direction::HIGH, 0.0),
+                 std::make_tuple("cap_max", Level::WARNING, Direction::HIGH,
+                                 0.0),
              }},
         };
+
+    PSUData psu;
+    psu.max_power = 0;
+    int plat_flag = 0;
 
     if (auto fileParts = splitFileName(inputPath))
     {
@@ -672,24 +751,64 @@ bool parseThresholdsFromAttr(
             for (const auto& t : map.at(item))
             {
                 const auto& [suffix, level, direction, offset] = t;
-                auto attrPath = boost::replace_all_copy(inputPath, item,
-                                                        suffix);
-                // create threshold with value NaN if file exists
-                // read can fail because resource is busy
-                // This allows thresholds interfaces created during init
-                // values will be updated when resource is available later.
-                if (auto val = readFile(attrPath, scaleFactor, true))
+                auto attrPath =
+                    boost::replace_all_copy(inputPath, item, suffix);
+
+                if (inputPath.find("platformpower") != std::string::npos)
                 {
-                    *val += offset;
+                    if (inputPath.find("power1") != std::string::npos)
+                    {
+                        psu.max_power = 0;
+                        psu = read_psu_max_power();
+                        plat_flag = 1;
+                    }
+                }
+                else
+                {
+                    plat_flag = 0;
+                }
 
-                    std::cout << "Threshold: " << attrPath << ": " << *val
-                              << "\n";
+                if (plat_flag == 1)
+                {
+                    if (direction == Direction::HIGH)
+                    {
+                        if (psu.max_power == 0)
+                        {
+                            psu.max_power =
+                                std::numeric_limits<int>::quiet_NaN();
+                        }
 
-                    thresholdVector.emplace_back(level, direction, *val, 0);
+                        thresholdVector.emplace_back(level, direction,
+                                                     psu.max_power, 0);
+                    }
+                }
+                else
+                {
+                    // create threshold with value NaN if file exists
+                    // read can fail because resource is busy
+                    // This allows thresholds interfaces created during init
+                    // values will be updated when resource is available later.
+                    if (auto val = readFile(attrPath, scaleFactor, true))
+                    {
+                        *val += offset;
+                        lg2::info("Threshold: '{PATH}': '{VALUE}'", "PATH",
+                                  attrPath, "VALUE", *val);
+
+                        if (direction == Direction::HIGH)
+                        {
+                            if (*val == 0)
+                            {
+                                *val = std::numeric_limits<double>::quiet_NaN();
+                            }
+                        }
+
+                        thresholdVector.emplace_back(level, direction, *val, 0);
+                    }
                 }
             }
         }
     }
+
     return true;
 }
 
