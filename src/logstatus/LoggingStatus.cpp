@@ -54,13 +54,101 @@ void EventStatus::getEntryCount()
     }
 }
 
+bool getLastSelDelStatus()
+{
+    sdbusplus::bus::bus bus = sdbusplus::bus::new_default();
+    auto methodCall = bus.new_method_call(
+        "xyz.openbmc_project.Settings", "/xyz/openbmc_project/logging/settings",
+        "org.freedesktop.DBus.Properties", "Get");
+
+    methodCall.append("xyz.openbmc_project.Logging.Settings", "selDelStatus");
+    try
+    {
+        auto reply = bus.call(methodCall);
+
+        std::variant<bool> value;
+        reply.read(value);
+        return std::get<bool>(value);
+    }
+    catch (const sdbusplus::exception_t& e)
+    {
+        std::cerr << "dbus-sensors: Failed to update Sel delete Status "
+                  << std::endl;
+        return 0;
+    }
+}
+
+void setLastSelDelStatus()
+{
+    sdbusplus::bus::bus bus = sdbusplus::bus::new_default();
+    auto methodCall = bus.new_method_call(
+        "xyz.openbmc_project.Settings", "/xyz/openbmc_project/logging/settings",
+        "org.freedesktop.DBus.Properties", "Set");
+
+    std::variant<bool> value = false;
+    methodCall.append("xyz.openbmc_project.Logging.Settings", "selDelStatus",
+                      value);
+    try
+    {
+        bus.call(methodCall);
+    }
+    catch (const sdbusplus::exception_t& e)
+    {
+        std::cerr << "Failed to update Sel delete Status " << std::endl;
+    }
+}
+
+bool getSELPolicy()
+{
+    std::string policyStr;
+    static constexpr const char* loggingSettingIntf =
+        "xyz.openbmc_project.Logging.Settings";
+    static constexpr const char* loggingSettingObjPath =
+        "/xyz/openbmc_project/logging/settings";
+
+    sdbusplus::bus::bus bus = sdbusplus::bus::new_default();
+    auto methodCall = bus.new_method_call(
+        "xyz.openbmc_project.Settings", loggingSettingObjPath,
+        "org.freedesktop.DBus.Properties", "Get");
+    methodCall.append(loggingSettingIntf, "SelPolicy");
+
+    try
+    {
+        auto reply = bus.call(methodCall);
+
+        std::variant<std::string> value;
+        reply.read(value);
+        policyStr = std::get<std::string>(value);
+    }
+    catch (const sdbusplus::exception_t& e)
+    {
+        std::cerr << "Failed to get Selpolicy " << std::endl;
+    }
+
+    if (policyStr == "xyz.openbmc_project.Logging.Settings.Policy.Linear")
+    {
+        return false;
+    }
+    else
+        return true;
+}
+
 void EventStatus::checkState()
 {
     uint16_t currentState = this->state;
     uint16_t newState = [&]() {
+        if (getLastSelDelStatus())
+        {
+            setLastSelDelStatus();
+            return static_cast<uint16_t>(logOffset::none);
+        }
         if (!entryCount)
         {
             return static_cast<uint16_t>(logOffset::Cleared);
+        }
+        if (getSELPolicy())
+        {
+            return static_cast<uint16_t>(logOffset::none);
         }
         else if ((entryCount == (maxEntries * 0.7)))
         {
