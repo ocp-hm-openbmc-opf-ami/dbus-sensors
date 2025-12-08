@@ -146,17 +146,22 @@ void EventStatus::checkState()
         {
             return static_cast<uint16_t>(logOffset::Cleared);
         }
+        if (entryCount == 1 &&
+            currentState == static_cast<uint16_t>(logOffset::Cleared))
+        {
+            return static_cast<uint16_t>(logOffset::Cleared);
+        }
         if (getSELPolicy())
         {
             return static_cast<uint16_t>(logOffset::none);
         }
-        else if ((entryCount == (maxEntries * 0.7)))
-        {
-            return static_cast<uint16_t>(logOffset::AlmostFull);
-        }
-        else if (entryCount == (maxEntries - 1))
+        else if (entryCount >= (maxEntries - 1))
         {
             return static_cast<uint16_t>(logOffset::Full);
+        }
+        else if ((entryCount >= (maxEntries * 0.7)))
+        {
+            return static_cast<uint16_t>(logOffset::AlmostFull);
         }
         return static_cast<uint16_t>(logOffset::none);
     }();
