@@ -492,14 +492,11 @@ bool createSensors(boost::asio::io_context& io,
 
     if (static_cast<unsigned int>(!createdSensors.empty()) != 0U)
     {
-        if (createdSensors.size() == 1)
-        {
-            lg2::info("Sensor is created");
-        }
-        else
-        {
-            lg2::info("Sensors are created");
-        }
+	    if (debug)
+	    {
+        	std::cout << "Sensor" << (createdSensors.size() == 1 ? " is" : "s are")
+			  << " created\n";
+	    }
     }
 
     return true;
@@ -627,10 +624,10 @@ bool exportDevice(const CPUConfig& config)
         lg2::error("Error creating '{CLIENT}'", "CLIENT", newClient);
         return false;
     }
-
-    lg2::info("'{PARAMETERS}' on bus '{BUS}' is exported", "PARAMETERS",
-              parameters, "BUS", busStr);
-
+    if (debug)
+    {
+	    std::cout << parameters << " on bus " << busStr << " is exported\n";
+    }
     return true;
 }
 
@@ -768,7 +765,10 @@ void detectCpu(boost::asio::steady_timer& pingTimer,
                                          4, pkgConfig.data(), &cc) ==
                         PECI_CC_SUCCESS)
                     {
-                        lg2::info("'{NAME}' is detected", "NAME", config.name);
+		        if (debug)
+			{
+                        	std::cout << config.name << " is detected\n";
+			}
                         if (!exportDevice(config))
                         {
                             pingSeconds = failPingSeconds;
@@ -790,8 +790,11 @@ void detectCpu(boost::asio::steady_timer& pingTimer,
                 else if (newState == State::READY)
                 {
                     rescanDelaySeconds = 5;
-                    lg2::info("DIMM(s) on '{NAME}' is/are detected", "NAME",
-                              config.name);
+		    if (debug)
+		    {
+                    	std::cout
+                        	<< "DIMM(s) on " << config.name << " is/are detected\n";
+		    }
                 }
             }
 
@@ -1100,14 +1103,11 @@ bool getCpuConfig(std::shared_ptr<sdbusplus::asio::connection>& systemBus,
 
     if (static_cast<unsigned int>(!cpuConfigs.empty()) != 0U)
     {
-        if (cpuConfigs.size() == 1)
-        {
-            lg2::info("CPU config is parsed");
-        }
-        else
-        {
-            lg2::info("CPU configs are parsed");
-        }
+	    if (debug)
+	    {
+        std::cout << "CPU config" << (cpuConfigs.size() == 1 ? " is" : "s are")
+                  << " parsed\n";
+	    }
         return true;
     }
 

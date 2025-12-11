@@ -413,14 +413,14 @@ void IntelCPUSensor::handleResponse(const boost::system::error_code& err)
                                 thresholds::updateThresholds(this);
                             }
                         }
-                        std::cout
-                            << name << ": Tcontrol changed from "
-                            << privTcontrol << " to " << gTcontrol << "\n";
+                        /*std::cout << name << ": Tcontrol changed from "
+                                  << privTcontrol << " to " << gTcontrol
+                                  << "\n";
                         for (auto& threshold : thresholds)
                         {
                             std::cout << name << ": new threshold value "
                                       << threshold.value << "\n";
-                        }
+                        }*/
                     }
                 }
                 else
