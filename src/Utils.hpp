@@ -336,8 +336,7 @@ struct GetSensorConfiguration :
                     });
                     return;
                 }
-
-                self->respData[path][interface] = std::move(data);
+                self->respData[path][interface] = data;
             },
             owner, path, "org.freedesktop.DBus.Properties", "GetAll",
             interface);
