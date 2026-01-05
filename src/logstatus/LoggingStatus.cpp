@@ -18,6 +18,7 @@ EventStatus::EventStatus(sdbusplus::asio::object_server& objectServer,
                          const uint16_t& testLimit) :
     Discrete(escapeName(sensorName), sensorConfiguration, conn),
     objServer(objectServer), conn(conn), maxEntries(testLimit),
+    previousEntryCount(0),
     objectPath("/xyz/openbmc_project/sensors/logging/" + name)
 {
     sensorInterface = objectServer.add_interface(
@@ -166,7 +167,11 @@ void EventStatus::checkState()
         return static_cast<uint16_t>(logOffset::none);
     }();
 
-    if (currentState != newState)
+    bool forceUpdate =
+        (previousEntryCount == 1 && entryCount == 0 &&
+         currentState == static_cast<uint16_t>(logOffset::Cleared));
+
+    if (currentState != newState || forceUpdate)
     {
         updateState(sensorInterface, newState);
 
@@ -187,6 +192,7 @@ void EventStatus::checkState()
         logData.push_back(objectPath);
         addSelEntry(conn, logData, EventDatas, true);
     }
+    previousEntryCount = entryCount;
 }
 
 void EventStatus::incrementCount()

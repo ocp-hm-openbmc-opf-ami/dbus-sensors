@@ -69,5 +69,6 @@ class EventStatus :
     std::shared_ptr<sdbusplus::asio::connection> conn;
     uint16_t maxEntries;
     uint16_t entryCount;
+    uint16_t previousEntryCount;
     std::string objectPath;
 };
