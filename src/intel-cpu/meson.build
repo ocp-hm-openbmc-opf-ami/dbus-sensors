@@ -12,3 +12,4 @@ executable(
     install: true,
     install_dir: '/usr/libexec/dbus-sensors',
 )
+
