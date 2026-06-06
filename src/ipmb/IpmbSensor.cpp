@@ -69,10 +69,11 @@ IpmbSensor::IpmbSensor(
     const std::string& sensorConfiguration,
     sdbusplus::asio::object_server& objectServer,
     std::vector<thresholds::Threshold>&& thresholdData, uint8_t deviceAddress,
-    uint8_t hostSMbusIndex, const float pollRate, std::string& sensorTypeName) :
+    uint8_t hostSMbusIndex, const float pollRate, std::string& sensorTypeName,
+    uint16_t sensorNumber, uint8_t lun) :
     Sensor(escapeName(sensorName), std::move(thresholdData),
            sensorConfiguration, "IpmbSensor", false, false, ipmbMaxReading,
-           ipmbMinReading, conn, PowerState::on),
+           ipmbMinReading, conn, PowerState::on, sensorNumber, lun),
     deviceAddress(deviceAddress), hostSMbusIndex(hostSMbusIndex),
     sensorPollMs(static_cast<int>(pollRate * 1000)), objectServer(objectServer),
     waitTimer(io)
@@ -658,12 +659,29 @@ void createSensors(
                                                     findType->second);
                     }
 
+                    uint16_t sensorNumber = 0;
+                    auto findSensorNumber = cfg.find("SensorNumber");
+                    if (findSensorNumber != cfg.end())
+                    {
+                        sensorNumber = std::visit(VariantToUnsignedIntVisitor(),
+                                                  findSensorNumber->second);
+                    }
+
+                    uint8_t lun = 0;
+                    auto findLun = cfg.find("LUN");
+                    if (findLun != cfg.end())
+                    {
+                        lun = std::visit(VariantToUnsignedIntVisitor(),
+                                         findLun->second);
+                    }
+
                     auto& sensor = sensors[name];
                     sensor = nullptr;
                     sensor = std::make_shared<IpmbSensor>(
                         dbusConnection, io, name, path, objectServer,
                         std::move(sensorThresholds), deviceAddress,
-                        hostSMbusIndex, pollRate, sensorTypeName);
+                        hostSMbusIndex, pollRate, sensorTypeName, sensorNumber,
+                        lun);
 
                     sensor->parseConfigValues(cfg);
                     if (!(sensor->sensorClassType(sensorClass)))
@@ -684,18 +702,12 @@ void interfaceRemoved(
     boost::container::flat_map<std::string, std::shared_ptr<IpmbSensor>>&
         sensors)
 {
-    if (message.is_method_error())
-    {
-        lg2::error("interfacesRemoved callback method error");
-        return;
-    }
-
     sdbusplus::message::object_path removedPath;
     std::vector<std::string> interfaces;
 
     message.read(removedPath, interfaces);
 
-    // If the xyz.openbmc_project.Confguration.X interface was removed
+    // If the xyz.openbmc_project.Configuration.X interface was removed
     // for one or more sensors, delete those sensor objects.
     auto sensorIt = sensors.begin();
     while (sensorIt != sensors.end())

@@ -53,26 +53,34 @@ class IntelCPUSensor :
 
     ~IntelCPUSensor() override;
     static constexpr unsigned int sensorScaleFactor = 1000;
+    static constexpr unsigned int sensorPollMs = 2000;
     static constexpr size_t warnAfterErrorCount = 10;
     static constexpr const char* labelTcontrol = "Tcontrol";
-    void setupRead(boost::asio::yield_context yield);
+    void setupRead();
+    const std::string& getPath() const
+    {
+        return path;
+    }
 
   private:
     sdbusplus::asio::object_server& objServer;
     boost::asio::streambuf readBuf;
     boost::asio::posix::stream_descriptor inputDev;
+    boost::asio::steady_timer waitTimer;
     std::string nameTcontrol;
     std::string path;
     double privTcontrol;
     double dtsOffset;
     bool show;
+    size_t pollTime{IntelCPUSensor::sensorPollMs};
     bool loggedInterfaceDown = false;
     uint8_t minMaxReadCounter{0};
     int fd{};
     unsigned int scaleFactor = 1;
     void handleResponse(const boost::system::error_code& err);
-    void checkThresholds(void) override;
-    void updateMinMaxValues(void);
+    void checkThresholds() override;
+    void updateMinMaxValues();
+    void restartRead();
 };
 
 extern boost::container::flat_map<std::string, std::shared_ptr<IntelCPUSensor>>

@@ -15,6 +15,8 @@
 #include <vector>
 
 namespace fs = std::filesystem;
+static constexpr size_t selEvtDataMaxSize = 3;
+
 struct CmpStr
 {
     bool operator()(const char* a, const char* b) const
@@ -24,7 +26,7 @@ struct CmpStr
 };
 
 // list of supported Power Supply Events
-enum class PsuEvent : uint16_t
+enum class PsuEvent : uint8_t
 {
     psuPresenceDetected = (1 << 0),
     PredictiveFailure = (1 << 2),
@@ -53,14 +55,16 @@ class PsuStatus :
               const uint64_t bus, const uint64_t address,
               boost::container::flat_map<std::string, std::vector<std::string>>
                   eventPathList,
-              const std::string& sensorConfiguration);
+              const std::string& sensorConfiguration, uint16_t sensorNumber,
+              uint8_t lun);
     ~PsuStatus() override;
     void setupRead(void);
     void restartRead(void);
-    void updateEvent(uint16_t, uint16_t);
+    void updateEvent(uint8_t, uint8_t);
     void initHwmonPath(uint64_t bus, uint64_t address);
 
   private:
+    std::shared_ptr<sdbusplus::asio::connection> conn;
     sdbusplus::asio::object_server& objServer;
     boost::asio::posix::stream_descriptor inputDev;
     boost::asio::steady_timer waitTimer;
@@ -69,4 +73,6 @@ class PsuStatus :
     boost::container::flat_map<std::string, std::vector<std::string>>
         eventPathList;
     fs::path findFile(const fs::path& directory, const std::string& filename);
+    bool presenceLogged = false;
+    std::map<std::string, bool> lastEventValues;
 };

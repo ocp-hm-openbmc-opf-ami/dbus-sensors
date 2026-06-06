@@ -43,7 +43,6 @@
 #include <fstream>
 #include <functional>
 #include <ios>
-#include <iostream>
 #include <map>
 #include <memory>
 #include <optional>
@@ -400,8 +399,8 @@ void createSensors(
                     if (findBus == baseConfiguration->second.end() ||
                         findAddress == baseConfiguration->second.end())
                     {
-                        std::cerr << baseConfiguration->first
-                                  << " missing bus or address\n";
+                        lg2::error("'{INTERFACE}' missing bus or address",
+                                   "INTERFACE", baseConfiguration->first);
                         continue;
                     }
                     unsigned int configBus = std::visit(
@@ -565,6 +564,21 @@ void createSensors(
 
             PowerState powerState = getPowerState(baseConfiguration->second);
 
+            uint16_t sensorNumber = defaultSensorNumber;
+            uint8_t lun = defaultLun;
+            auto findSensorNum = baseConfiguration->second.find("SensorNumber");
+            if (findSensorNum != baseConfiguration->second.end())
+            {
+                sensorNumber = std::visit(VariantToUnsignedIntVisitor(),
+                                          findSensorNum->second);
+            }
+            auto findLun = baseConfiguration->second.find("LUN");
+            if (findLun != baseConfiguration->second.end())
+            {
+                lun =
+                    std::visit(VariantToUnsignedIntVisitor(), findLun->second);
+            }
+
             constexpr double defaultMaxReading = 25000;
             constexpr double defaultMinReading = 0;
             std::pair<double, double> limits =
@@ -667,7 +681,7 @@ void createSensors(
                 path.string(), baseType, objectServer, dbusConnection,
                 presenceGpio, redundancy, io, sensorName,
                 std::move(sensorThresholds), *interfacePath, limits, powerState,
-                led);
+                led, sensorNumber, lun);
             tachSensor->setupRead();
 
             if (!pwmPath.empty() && std::filesystem::exists(pwmPath) &&
@@ -675,7 +689,7 @@ void createSensors(
             {
                 pwmSensors[pwmPath] = std::make_unique<PwmSensor>(
                     pwmName, pwmPath, dbusConnection, objectServer,
-                    *interfacePath, "Fan", isValueMutable);
+                    *interfacePath, "Fan", isValueMutable, sensorNumber, lun);
             }
         }
 
@@ -713,11 +727,6 @@ int main()
     boost::asio::steady_timer filterTimer(io);
     std::function<void(sdbusplus::message_t&)> eventHandler =
         [&](sdbusplus::message_t& message) {
-            if (message.is_method_error())
-            {
-                lg2::error("callback method error");
-                return;
-            }
             sensorsChanged->insert(message.get_path());
             // this implicitly cancels the timer
             filterTimer.expires_after(std::chrono::seconds(1));

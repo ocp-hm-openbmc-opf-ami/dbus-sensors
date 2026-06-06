@@ -301,10 +301,30 @@ void createSensors(
                     }
                 }
 
+                // sensornumber is optional parameter
+                uint16_t sensorNumber = defaultSensorNumber;
+                uint8_t lun = defaultLun;
+
+                auto configSensorNum =
+                    baseConfiguration->second.find("SensorNumber");
+                if (configSensorNum != baseConfiguration->second.end())
+                {
+                    sensorNumber = std::visit(VariantToUnsignedIntVisitor(),
+                                              configSensorNum->second);
+                }
+
+                auto configlun = baseConfiguration->second.find("LUN");
+                if (configlun != baseConfiguration->second.end())
+                {
+                    lun = std::visit(VariantToUnsignedIntVisitor(),
+                                     configlun->second);
+                }
+
                 sensor = std::make_shared<ADCSensor>(
                     path.string(), objectServer, dbusConnection, io, sensorName,
                     std::move(sensorThresholds), scaleFactor, pollRate,
-                    readState, *interfacePath, std::move(bridgeGpio));
+                    readState, *interfacePath, std::move(bridgeGpio),
+                    sensorNumber, lun);
                 sensor->setupRead();
             }
         });

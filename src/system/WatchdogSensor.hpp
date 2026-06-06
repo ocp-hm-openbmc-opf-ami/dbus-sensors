@@ -2,8 +2,6 @@
 
 #include <Discrete.hpp>
 #include <Utils.hpp>
-#include <boost/asio/deadline_timer.hpp>
-#include <boost/asio/io_service.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 #include <xyz/openbmc_project/Association/Definitions/server.hpp>
@@ -51,7 +49,8 @@ class WatchdogSensor :
         sdbusplus::asio::object_server& objectServer,
         std::shared_ptr<sdbusplus::asio::connection>& conn,
         /*boost::asio::io_service& io,*/ const std::string& sensorName,
-        const std::string& sensorConfiguration);
+        const std::string& sensorConfiguration, uint16_t sensorNumber,
+        uint8_t lun);
     ~WatchdogSensor() override;
 
     std::string status;

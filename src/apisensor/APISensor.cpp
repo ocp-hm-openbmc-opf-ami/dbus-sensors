@@ -51,9 +51,10 @@ APISensor::APISensor(
     const std::string& sensorReadFuncName,
     const std::string& sensorWriteFuncName,
     const std::string& sensorInfoFuncName, unsigned long sensorPollTimeMs,
-    void* libHandle) :
+    void* libHandle, uint16_t sensorNumber, uint8_t lun) :
     Sensor(escapeName(sensorName), std::move(thresholdsIn), sensorConfiguration,
-           objectType, true, true, maxReading, minReading, conn, powerState),
+           objectType, true, true, maxReading, minReading, conn, powerState,
+           sensorNumber, lun),
     objType(objectType), objServer(objectServer), monitorTimer(io),
     scale(sensorScale), eventReadingType(sensorEventReadingType),
     typeCode(sensorTypeCode), entityId(sensorEntityId),
@@ -463,8 +464,10 @@ APISensorDiscrete::APISensorDiscrete(
     const std::string& sensorInfoFuncName,
     const std::string& sensorInfoFuncCallState,
     const std::string& sensorLocationIndicatorFuncName,
-    unsigned long sensorPollTimeMs, void* libHandle) :
-    Discrete(escapeName(sensorName), sensorConfiguration, conn),
+    unsigned long sensorPollTimeMs, void* libHandle, uint16_t sensorNumber,
+    uint8_t lun) :
+    Discrete(escapeName(sensorName), sensorConfiguration, conn, sensorNumber,
+             lun),
     objType(objectType), objServer(objectServer), monitorTimer(io),
     eventReadingType(sensorEventReadingType), typeCode(sensorTypeCode),
     entityId(sensorEntityId), entityInstance(sensorEntityInstance),
@@ -889,6 +892,7 @@ void APISensorDiscrete::performRead(void)
 
                         addData["SENSOR_DATA"] = eventDataStr;
                         addData["SENSOR_PATH"] = sPath;
+                        addData["SENSOR_NUM"] = std::to_string(sensorNumber);
                         addData["EVENT_DIR"] = std::to_string(assert);
                         addData["GENERATOR_ID"] =
                             std::to_string(static_cast<uint16_t>(32));
@@ -920,7 +924,7 @@ void APISensorDiscrete::performRead(void)
                                 << std::endl;
                         }
                         addSelEntry(dbusConnection, logData, eventData, assert,
-                                    addData);
+                                    sensorNumber, addData);
 
                         // If we have an InfoFunction and and the current sensor
                         // state matches the state needed for InfoFunction to be
@@ -1085,6 +1089,8 @@ void APISensorDiscrete::performRead(void)
 
                                 addData["SENSOR_DATA"] = eventDataStr;
                                 addData["SENSOR_PATH"] = sPath;
+                                addData["SENSOR_NUM"] =
+                                    std::to_string(sensorNumber);
                                 addData["EVENT_DIR"] = std::to_string(assert);
                                 addData["GENERATOR_ID"] =
                                     std::to_string(static_cast<uint16_t>(32));
@@ -1120,7 +1126,7 @@ void APISensorDiscrete::performRead(void)
                                         << std::endl;
                                 }
                                 addSelEntry(dbusConnection, logData, eventData,
-                                            assert, addData);
+                                            assert, sensorNumber, addData);
                             }
                             break;
                         }

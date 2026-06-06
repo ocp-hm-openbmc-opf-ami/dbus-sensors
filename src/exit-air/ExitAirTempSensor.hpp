@@ -31,7 +31,8 @@ struct CFMSensor : public Sensor, std::enable_shared_from_this<CFMSensor>
               const std::string& name, const std::string& sensorConfiguration,
               sdbusplus::asio::object_server& objectServer,
               std::vector<thresholds::Threshold>&& thresholdData,
-              std::shared_ptr<ExitAirTempSensor>& parent);
+              std::shared_ptr<ExitAirTempSensor>& parent, uint16_t sensorNumber,
+              uint8_t lun);
     ~CFMSensor() override;
 
     bool calculate(double& /*value*/);
@@ -68,7 +69,8 @@ struct ExitAirTempSensor :
                       const std::string& name,
                       const std::string& sensorConfiguration,
                       sdbusplus::asio::object_server& objectServer,
-                      std::vector<thresholds::Threshold>&& thresholdData);
+                      std::vector<thresholds::Threshold>&& thresholdData,
+                      uint16_t sensorNumber, uint8_t lun);
     ~ExitAirTempSensor() override;
 
     void checkThresholds() override;

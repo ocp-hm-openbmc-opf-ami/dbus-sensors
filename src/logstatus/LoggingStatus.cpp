@@ -11,12 +11,13 @@
 #include <string>
 #include <vector>
 
-EventStatus::EventStatus(sdbusplus::asio::object_server& objectServer,
-                         std::shared_ptr<sdbusplus::asio::connection>& conn,
-                         const std::string& sensorName,
-                         const std::string& sensorConfiguration,
-                         const uint16_t& testLimit) :
-    Discrete(escapeName(sensorName), sensorConfiguration, conn),
+EventStatus::EventStatus(
+    sdbusplus::asio::object_server& objectServer,
+    std::shared_ptr<sdbusplus::asio::connection>& conn,
+    const std::string& sensorName, const std::string& sensorConfiguration,
+    const uint16_t& testLimit, uint8_t sensorNumber, uint8_t lun) :
+    Discrete(escapeName(sensorName), sensorConfiguration, conn, sensorNumber,
+             lun),
     objServer(objectServer), conn(conn), maxEntries(testLimit),
     previousEntryCount(0),
     objectPath("/xyz/openbmc_project/sensors/logging/" + name)
@@ -190,7 +191,7 @@ void EventStatus::checkState()
         logData.push_back(this->name);
         logData.push_back(eventName);
         logData.push_back(objectPath);
-        addSelEntry(conn, logData, EventDatas, true);
+        addSelEntry(conn, logData, EventDatas, true, sensorNumber);
     }
     previousEntryCount = entryCount;
 }

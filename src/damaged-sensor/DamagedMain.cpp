@@ -233,9 +233,9 @@ void createSensors(
                 try
                 {
                     sensor = std::make_shared<DamagedSensor>(
-                        *hwmonFile, sensorType, objectServer, dbusConnection,
-                        io, sensorName, std::move(sensorThresholds),
-                        interfacePath);
+                        hwmonFile.value_or(""), sensorType, objectServer,
+                        dbusConnection, io, sensorName,
+                        std::move(sensorThresholds), interfacePath);
                     sensor->setupRead();
                 }
                 catch (const std::exception& e)

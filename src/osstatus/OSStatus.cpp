@@ -14,8 +14,10 @@
 OSStatus::OSStatus(sdbusplus::asio::object_server& objectServer,
                    std::shared_ptr<sdbusplus::asio::connection>& conn,
                    const std::string& sensorName,
-                   const std::string& sensorConfiguration) :
-    Discrete(escapeName(sensorName), sensorConfiguration, conn),
+                   const std::string& sensorConfiguration,
+                   uint16_t sensorNumber, uint8_t lun) :
+    Discrete(escapeName(sensorName), sensorConfiguration, conn, sensorNumber,
+             lun),
     objServer(objectServer)
 {
     sensorInterface =

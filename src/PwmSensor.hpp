@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Utils.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 
@@ -14,7 +15,9 @@ class PwmSensor
               std::shared_ptr<sdbusplus::asio::connection>& conn,
               sdbusplus::asio::object_server& objectServer,
               const std::string& sensorConfiguration,
-              const std::string& sensorType, bool isValueMutable = false);
+              const std::string& sensorType, bool isValueMutable = false,
+              uint16_t sensorNumber = defaultSensorNumber,
+              uint8_t lun = defaultLun);
     ~PwmSensor();
 
   private:
@@ -26,6 +29,8 @@ class PwmSensor
     std::shared_ptr<sdbusplus::asio::dbus_interface> association;
     std::shared_ptr<sdbusplus::asio::dbus_interface> valueMutabilityInterface;
     double pwmMax;
+    uint16_t sensorNumber;
+    uint8_t lun;
     void setValue(uint32_t value);
     uint32_t getValue(bool errThrow = true);
 };

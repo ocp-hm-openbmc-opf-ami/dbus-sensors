@@ -31,13 +31,13 @@ class ACPIDeviceStatus :
     public std::enable_shared_from_this<ACPIDeviceStatus>
 {
   public:
-    ACPIDeviceStatus(sdbusplus::asio::object_server& objectServer,
-                     std::shared_ptr<sdbusplus::asio::connection>& conn,
-                     boost::asio::io_context& io, const std::string& sensorName,
-                     const std::string& deviceName,
-                     std::optional<uint8_t> deviceBus,
-                     std::optional<uint8_t> deviceAddress,
-                     const std::string& sensorConfiguration);
+    ACPIDeviceStatus(
+        sdbusplus::asio::object_server& objectServer,
+        std::shared_ptr<sdbusplus::asio::connection>& conn,
+        boost::asio::io_context& io, const std::string& sensorName,
+        const std::string& deviceName, std::optional<uint8_t> deviceBus,
+        std::optional<uint8_t> deviceAddress, uint16_t sensorNumber,
+        uint8_t lun, const std::string& sensorConfiguration);
     ~ACPIDeviceStatus() override;
     void setupRead(void);
 
@@ -49,6 +49,8 @@ class ACPIDeviceStatus :
     std::string deviceName;
     std::optional<uint8_t> deviceBus;
     std::optional<uint8_t> deviceAddress;
+    uint16_t sensorNumber;
+    uint8_t lun;
     std::shared_ptr<sdbusplus::asio::connection>& conn;
     boost::container::flat_set<std::pair<uint8_t, bool>> assertedEvents;
     fs::path findFile(const fs::path& directory, const std::string& filename);

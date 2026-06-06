@@ -1,3 +1,7 @@
+if not get_option('mctp').allowed()
+    subdir_done()
+endif
+
 executable(
     'mctpreactor',
     'MCTPReactorMain.cpp',

@@ -1,4 +1,6 @@
-src_inc = include_directories('..')
+if not get_option('fan').allowed()
+    subdir_done()
+endif
 
 executable(
     'fansensor',

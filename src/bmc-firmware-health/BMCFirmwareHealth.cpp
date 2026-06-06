@@ -16,8 +16,10 @@ BMCFirmwareHealth::BMCFirmwareHealth(
     sdbusplus::asio::object_server& objectServer,
     std::shared_ptr<sdbusplus::asio::connection>& conn,
     boost::asio::io_context& io, const std::string& sensorName,
-    const std::string& sensorConfiguration) :
-    Discrete(escapeName(sensorName), sensorConfiguration, conn),
+    const std::string& sensorConfiguration, uint16_t sensorNumber,
+    uint8_t lun) :
+    Discrete(escapeName(sensorName), sensorConfiguration, conn, sensorNumber,
+             lun),
     objServer(objectServer), waitTimer(io), conn(conn)
 {
     sensorInterface = objectServer.add_interface(
@@ -47,12 +49,30 @@ BMCFirmwareHealth::BMCFirmwareHealth(
         std::cerr << "Error: Failed to initialize DBus interfaces\n";
         return;
     }
+    setupRead();
 }
 
 BMCFirmwareHealth::~BMCFirmwareHealth()
 {
     objServer.remove_interface(sensorInterface);
     objServer.remove_interface(association);
+}
+
+bool BMCFirmwareHealth::isFRUAccessible()
+{
+    auto fruAvailableCall =
+        conn->new_method_call(fruService, fruObjectPath, PROP_INTF, "GetAll");
+    fruAvailableCall.append(fruIntf);
+
+    try
+    {
+        auto fruAvailableReply = conn->call(fruAvailableCall);
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        return false;
+    }
 }
 
 void BMCFirmwareHealth::setupRead(void)
@@ -62,7 +82,14 @@ void BMCFirmwareHealth::setupRead(void)
 
 void BMCFirmwareHealth::monitorState()
 {
-    uint16_t state = 0;
+    uint8_t oldValue = state;
+
+    // Create new state based on current conditions (don't start by clearing)
+    uint8_t newState = state;
+
+    // Local variables for SEL entries
+    std::vector<uint8_t> eventData(selEvtDataMaxSize, 0xFF);
+    std::vector<std::string> logData(logDataMaxSize);
 
     // setup connection to dbus
     boost::asio::io_context io;
@@ -74,6 +101,7 @@ void BMCFirmwareHealth::monitorState()
     std::unordered_map<
         std::string, std::unordered_map<std::string, std::vector<std::string>>>
         respData;
+
     try
     {
         auto resp = conn->call(mapper);
@@ -87,9 +115,9 @@ void BMCFirmwareHealth::monitorState()
 
     for (const auto& [path, interfaceDict] : respData)
     {
-	if (path.find("PMT") != std::string::npos)
+        if (path.find("PMT") != std::string::npos)
         {
-             continue; // Skip PMT-related sensor paths
+            continue; // Skip PMT-related sensor paths
         }
 
         for (const auto& [owner, _] : interfaceDict)
@@ -118,19 +146,118 @@ void BMCFirmwareHealth::monitorState()
                     std::visit(VariantToDoubleVisitor(), findValue->second);
                 if (std::isnan(value))
                 {
-                    state = state |
-                            (1 << managementSubsystemHealth::sensorUnavailable);
+                    newState |=
+                        (1 << managementSubsystemHealth::sensorUnavailable);
                 }
                 else if (value == 0)
                 {
-                    state = state |
-                            (1 << managementSubsystemHealth::sensorFailure);
+                    newState |= (1 << managementSubsystemHealth::sensorFailure);
                 }
             }
         }
     }
 
-    updateState(sensorInterface, state);
+    // --- Transition-aware FRU unavailable bit ---
+    if (isFRUAccessible())
+    {
+        // Clear the bit if FRU is available
+        newState &=
+            ~(1 << managementSubsystemHealth::controllerAccessUnavailable);
+    }
+    else
+    {
+        // Set the bit if FRU is unavailable
+        newState |=
+            (1 << managementSubsystemHealth::controllerAccessUnavailable);
+    }
+
+    // Check System Lock status
+    try
+    {
+        auto mapperCall = conn->new_method_call(mapper::busName, mapper::path,
+                                                mapper::interface, "GetObject");
+        mapperCall.append(systemLockObjectPath,
+                          std::vector<std::string>{systemLockIntf});
+
+        std::map<std::string, std::vector<std::string>> owners;
+        auto mapperReply = conn->call(mapperCall);
+        mapperReply.read(owners);
+
+        if (!owners.empty())
+        {
+            auto service = owners.begin()->first;
+
+            auto call = conn->new_method_call(
+                service.c_str(), systemLockObjectPath, PROP_INTF, "Get");
+            call.append(systemLockIntf, systemLockProp);
+
+            std::variant<bool> value;
+            auto reply = conn->call(call);
+            reply.read(value);
+
+            bool locked = std::get<bool>(value);
+            if (locked)
+            {
+                newState |=
+                    (1
+                     << managementSubsystemHealth::ManagementControllerOffline);
+            }
+            else
+            {
+                newState &= ~(
+                    1
+                    << managementSubsystemHealth::ManagementControllerOffline);
+            }
+        }
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "SystemLock polling failed: " << e.what() << "\n";
+    }
+
+    // Update state with the newly calculated state
+    state = newState;
+
+    // Log SEL and update DBus only when state actually changes
+    if (oldValue != state)
+    {
+        updateState(sensorInterface, state);
+
+        uint8_t asserted = static_cast<uint8_t>((~oldValue) & state);
+        logData[0] = name;
+        logData[2] = "/xyz/openbmc_project/sensors/bmcfirmwarehealth/" + name;
+        logData[3] = "SensorHealthStateAssert";
+
+        if (asserted & (1 << managementSubsystemHealth::sensorFailure))
+        {
+            eventData[0] = static_cast<uint8_t>(sensorFailure);
+            logData[1] = "sensorFailure";
+            addSelEntry(conn, logData, eventData, true, sensorNumber);
+        }
+        else if (asserted & (1 << managementSubsystemHealth::sensorUnavailable))
+        {
+            eventData[0] = static_cast<uint8_t>(sensorUnavailable);
+            logData[1] = "sensorUnavailable";
+            addSelEntry(conn, logData, eventData, true, sensorNumber);
+        }
+        else if (asserted &
+                 (1 << managementSubsystemHealth::controllerAccessUnavailable))
+        {
+            eventData[0] = static_cast<uint8_t>(controllerAccessUnavailable);
+            logData[1] = "controllerAccessUnavailable";
+            addSelEntry(conn, logData, eventData, true, sensorNumber);
+        }
+        else if (asserted &
+                 (1 << managementSubsystemHealth::ManagementControllerOffline))
+        {
+            eventData[0] = static_cast<uint8_t>(ManagementControllerOffline);
+            logData[1] = "ManagementControllerOffline";
+            addSelEntry(conn, logData, eventData, true, sensorNumber);
+        }
+    }
+
+    // Save current state for next cycle
+    prevState = state;
     restartRead();
 }
 

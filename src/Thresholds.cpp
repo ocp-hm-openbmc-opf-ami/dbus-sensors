@@ -28,7 +28,6 @@
 #include <variant>
 #include <vector>
 
-static constexpr bool debug = false;
 namespace thresholds
 {
 
@@ -468,15 +467,12 @@ static std::vector<ChangeParam> checkThresholds(Sensor* sensor, double value)
     if (cDebugThrottle >= 1000)
     {
         cDebugThrottle = 0;
-        if constexpr (debug)
-        {
-            lg2::error("checkThresholds: High T= {HIGH_TRUE}, F= {HIGH_FALSE},"
-                       " M= {HIGH_MIDSTATE}, Low T= {LOW_TRUE}, F= {LOW_FALSE},"
-                       " M= {LOW_MIDSTATE}",
-                       "HIGH_TRUE", cHiTrue, "HIGH_FALSE", cHiFalse,
-                       "HIGH_MIDSTATE", cHiMidstate, "LOW_TRUE", cLoTrue,
-                       "LOW_FALSE", cLoFalse, "LOW_MIDSTATE", cLoMidstate);
-        }
+        lg2::debug("checkThresholds: High T= {HIGH_TRUE}, F= {HIGH_FALSE},"
+                   " M= {HIGH_MIDSTATE}, Low T= {LOW_TRUE}, F= {LOW_FALSE},"
+                   " M= {LOW_MIDSTATE}",
+                   "HIGH_TRUE", cHiTrue, "HIGH_FALSE", cHiFalse,
+                   "HIGH_MIDSTATE", cHiMidstate, "LOW_TRUE", cLoTrue,
+                   "LOW_FALSE", cLoFalse, "LOW_MIDSTATE", cLoMidstate);
     }
 
     return thresholdChanges;
@@ -577,7 +573,7 @@ void checkThresholdsPowerDelay(const std::weak_ptr<Sensor>& weakSensor,
     bool forceAssert = !sensor->hadValidValue;
     for (const auto& change : changes)
     {
-        // When CPU is powered off, some volatges are expected to
+        // When CPU is powered off, some voltages are expected to
         // go below low thresholds. Filter these events with thresholdTimer.
         // 1. always delay the assertion of low events to see if they are
         //   caused by power off event.
@@ -744,7 +740,7 @@ bool parseThresholdsFromAttr_CPU(
     if (auto fileParts = splitFileName(inputPath))
     {
         auto& [type, nr, item] = *fileParts;
-        if (map.count(item) != 0)
+        if (map.contains(item))
         {
             for (const auto& t : map.at(item))
             {
@@ -789,7 +785,7 @@ bool parseThresholdsFromAttr_CPU(
                     if (auto val = readFile(attrPath, scaleFactor, true))
                     {
                         *val += offset;
-                        lg2::info("Threshold: '{PATH}': '{VALUE}'", "PATH",
+                        lg2::debug("Threshold: '{PATH}': '{VALUE}'", "PATH",
                                   attrPath, "VALUE", *val);
 
                         if (direction == Direction::HIGH)

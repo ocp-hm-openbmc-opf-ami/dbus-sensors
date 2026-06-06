@@ -42,7 +42,6 @@
 #include <vector>
 
 static constexpr const char* sensorPathPrefix = "/xyz/openbmc_project/sensors/";
-
 static constexpr bool debug = false;
 
 PSUSensor::PSUSensor(
@@ -54,9 +53,11 @@ PSUSensor::PSUSensor(
     const std::string& sensorConfiguration, const PowerState& powerState,
     const std::string& sensorUnits, unsigned int factor, double max, double min,
     double offset, const std::string& label, size_t tSize, double pollRate,
-    const std::shared_ptr<I2CDevice>& i2cDevice) :
+    const std::shared_ptr<I2CDevice>& i2cDevice, uint16_t sensorNumber,
+    uint8_t lun) :
     Sensor(escapeName(sensorName), std::move(thresholdsIn), sensorConfiguration,
-           objectType, false, false, max, min, conn, powerState),
+           objectType, false, false, max, min, conn, powerState, sensorNumber,
+           lun),
     i2cDevice(i2cDevice), objServer(objectServer),
     inputDev(io, path, boost::asio::random_access_file::read_only),
     waitTimer(io), path(path), sensorFactor(factor), sensorOffset(offset),
@@ -70,16 +71,13 @@ PSUSensor::PSUSensor(
         filterZero = true;
     }
 
-    if constexpr (debug)
-    {
-        lg2::debug(
-            "Constructed sensor - path: {PATH}, type: {TYPE}, config: {CONFIG}, "
-            "typename: {TYPENAME}, factor: {FACTOR}, min: {MIN}, max: {MAX}, "
-            "offset: {OFFSET}, name: {NAME}",
-            "PATH", path, "TYPE", objectType, "CONFIG", sensorConfiguration,
-            "TYPENAME", unitPath, "FACTOR", factor, "MIN", min, "MAX", max,
-            "OFFSET", offset, "NAME", sensorName);
-    }
+    lg2::debug(
+        "Constructed sensor - path: {PATH}, type: {TYPE}, config: {CONFIG}, "
+        "typename: {TYPENAME}, factor: {FACTOR}, min: {MIN}, max: {MAX}, "
+        "offset: {OFFSET}, name: {NAME}",
+        "PATH", path, "TYPE", objectType, "CONFIG", sensorConfiguration,
+        "TYPENAME", unitPath, "FACTOR", factor, "MIN", min, "MAX", max,
+        "OFFSET", offset, "NAME", sensorName);
     if (pollRate > 0.0)
     {
         sensorPollMs = static_cast<unsigned int>(pollRate * 1000);
@@ -216,29 +214,20 @@ void PSUSensor::handleResponse(const boost::system::error_code& err,
 {
     if (err == boost::asio::error::operation_aborted)
     {
-        if (debug)
-        {
-            lg2::error("Read aborted");
-        }
+        lg2::error("Read aborted");
         return;
     }
     if ((err == boost::system::errc::bad_file_descriptor) ||
         (err == boost::asio::error::misc_errors::not_found))
     {
-        if (debug)
-        {
-            lg2::error("Bad file descriptor for '{PATH}'", "PATH", path);
-        }
+        lg2::error("Bad file descriptor for '{PATH}'", "PATH", path);
         return;
     }
     if (err || bytesRead == 0)
     {
         if (readingStateGood())
         {
-            if (debug)
-            {
-                lg2::error("'{NAME}' read failed", "NAME", name);
-            }
+            lg2::error("'{NAME}' read failed", "NAME", name);
         }
         restartRead();
         return;

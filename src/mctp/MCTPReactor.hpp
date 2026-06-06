@@ -21,6 +21,59 @@ struct AssociationServer
     virtual void disassociate(const std::string& path) = 0;
 };
 
+enum class MCTPDeviceState
+{
+    // The presence of the device is acknowledged, but we're yet to issue the
+    // initial setup request. Ensures endpoint state is tracked for at least the
+    // lifetime of the inventory
+    Unmanaged,
+
+    // The endpoint setup request for the device has been issued, and we're
+    // asynchronously waiting on the response.
+    Assigning,
+
+    // An endpoint setup request has been previously issued for the device
+    // but it was not successful. Another setup request will be issued in the
+    // future.
+    Unassigned,
+
+    // An endpoint setup request was successfully issued for the device. The
+    // endpoint is currently known to be reachable and both its inventory and
+    // endpoint object are published.
+    Assigned,
+
+    // The device was removed from inventory while we were waiting for a
+    // setup call to complete. The anticipated response will inform whether we
+    // consider the device's lifecycle to be complete, or that it be considered
+    // recovered.
+    Quarantine,
+
+    // A device's endpoint object was removed while its inventory remained
+    // present. A future setup request will be issued to recover the endpoint
+    // configuration.
+    Lost,
+
+    // An endpoint setup request for a lost device has been issued, and we're
+    // asynchronously waiting on the response.
+    Recovering,
+
+    // The endpoint setup request was successfully issued for a previously
+    // lost device. As the device is known to currently be responsive, insulate
+    // the configuration from observation of a subsequent inventory removal.
+    // Observing an inventory addition subsequent to observation of inventory
+    // removal transitions the device state back to Assigned.
+    Recovered,
+
+    // Removal of the device from inventory has resulted in a remove call being
+    // issued for the device's endpoint, and we're asynchronously waiting on
+    // the response.
+    Removing,
+
+    // Addition of the device's inventory has been observed concurrent to a
+    // remove call whose response is yet to be observed.
+    Pending,
+};
+
 class MCTPReactor : public std::enable_shared_from_this<MCTPReactor>
 {
     using MCTPDeviceFactory = std::function<std::shared_ptr<MCTPDevice>(
@@ -47,12 +100,12 @@ class MCTPReactor : public std::enable_shared_from_this<MCTPReactor>
 
     AssociationServer& server;
     MCTPDeviceRepository devices;
-
-    // Tracks MCTP devices that have failed their setup
-    std::set<std::shared_ptr<MCTPDevice>> deferred;
+    std::map<std::size_t, MCTPDeviceState> states;
 
     void deferSetup(const std::shared_ptr<MCTPDevice>& dev);
     void setupEndpoint(const std::shared_ptr<MCTPDevice>& dev);
     void trackEndpoint(const std::shared_ptr<MCTPEndpoint>& ep);
     void untrackEndpoint(const std::shared_ptr<MCTPEndpoint>& ep);
+    void next(const std::shared_ptr<MCTPDevice>& dev, MCTPDeviceState next);
+    void terminate(const std::shared_ptr<MCTPDevice>& dev);
 };

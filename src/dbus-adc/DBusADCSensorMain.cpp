@@ -21,10 +21,13 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/asio/signal_set.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/container/flat_set.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 #include <sdbusplus/bus/match.hpp>
+
+#include <chrono>
 
 static constexpr float defaultPollRate = 1.0;
 static constexpr float defaultGpioBridgeSetupTime = 0.02;
@@ -169,7 +172,7 @@ int main()
                       controllers);
     });
 
-    boost::asio::deadline_timer sensorFilterTimer(io);
+    boost::asio::steady_timer sensorFilterTimer(io);
     std::function<void(sdbusplus::message::message&)> sensorEventHandler =
         [&](sdbusplus::message::message& message) {
             if (message.is_method_error())
@@ -189,7 +192,7 @@ int main()
                 sensorsChanged->insert(message.get_path());
             }
 
-            sensorFilterTimer.expires_from_now(boost::posix_time::seconds(1));
+            sensorFilterTimer.expires_after(std::chrono::seconds(1));
 
             sensorFilterTimer.async_wait(
                 [&](const boost::system::error_code& ec) {
@@ -206,7 +209,7 @@ int main()
                 });
         };
 
-    boost::asio::deadline_timer controllerFilterTimer(io);
+    boost::asio::steady_timer controllerFilterTimer(io);
     std::function<void(sdbusplus::message::message&)> controllerEventHandler =
         [&](sdbusplus::message::message& message) {
             if (message.is_method_error())
@@ -227,8 +230,7 @@ int main()
                 controllersChanged->insert(message.get_path());
             }
 
-            controllerFilterTimer.expires_from_now(
-                boost::posix_time::seconds(1));
+            controllerFilterTimer.expires_after(std::chrono::seconds(1));
 
             controllerFilterTimer.async_wait(
                 [&](const boost::system::error_code& ec) {
@@ -246,7 +248,7 @@ int main()
                 });
         };
 
-    boost::asio::deadline_timer cpuFilterTimer(io);
+    boost::asio::steady_timer cpuFilterTimer(io);
     std::function<void(sdbusplus::message::message&)> cpuPresenceHandler =
         [&](sdbusplus::message::message& message) {
             std::string path = message.get_path();
@@ -276,7 +278,7 @@ int main()
                 return;
             }
             cpuPresence[index] = std::get<bool>(findPresence->second);
-            cpuFilterTimer.expires_from_now(boost::posix_time::seconds(1));
+            cpuFilterTimer.expires_after(std::chrono::seconds(1));
             cpuFilterTimer.async_wait([&](const boost::system::error_code& ec) {
                 if (ec == boost::asio::error::operation_aborted)
                 {
@@ -677,6 +679,22 @@ void createSensors(
             auto& sensor = sensors[name];
             sensor = nullptr;
 
+            // Extract SensorNumber and LUN from configuration
+            uint16_t SensorNumber = defaultSensorNumber;
+            uint8_t Lun = defaultLun;
+            auto findSensorNum = configuration->second.find("SensorNumber");
+            if (findSensorNum != configuration->second.end())
+            {
+                SensorNumber = std::visit(VariantToUnsignedIntVisitor(),
+                                          findSensorNum->second);
+            }
+            auto findLun = configuration->second.find("LUN");
+            if (findLun != configuration->second.end())
+            {
+                Lun =
+                    std::visit(VariantToUnsignedIntVisitor(), findLun->second);
+            }
+
             sensor = std::make_shared<DBusADCSensor>(
                 objectServer, dbusConnection, io, name,
                 std::move(sensorThresholds), controller->second->dbusService,
@@ -684,7 +702,8 @@ void createSensors(
                 controller->second->dbusIface, std::move(dbusPropName),
                 controller->second->getVref(),
                 controller->second->getResolution(), scaleFactor, pollRate,
-                readAtState, objPath.str, std::move(bridgeGpio));
+                readAtState, objPath.str, std::move(bridgeGpio), SensorNumber,
+                Lun);
 
             sensor->setupRead();
         }

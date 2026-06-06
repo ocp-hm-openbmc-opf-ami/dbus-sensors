@@ -1,11 +1,14 @@
 #include <BatteryStatus.hpp>
+#include <Utils.hpp>
 #include <VariantVisitors.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/container/flat_set.hpp>
 #include <sdbusplus/bus/match.hpp>
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -99,9 +102,26 @@ void createSensors(
                 sensorConstruct = nullptr;
                 try
                 {
+                    // Extract SensorNumber and LUN from configuration
+                    uint16_t sensorNumber = defaultSensorNumber;
+                    uint8_t lun = defaultLun;
+                    auto findSensorNum =
+                        baseConfiguration->second.find("SensorNumber");
+                    if (findSensorNum != baseConfiguration->second.end())
+                    {
+                        sensorNumber = std::visit(VariantToUnsignedIntVisitor(),
+                                                  findSensorNum->second);
+                    }
+                    auto findLun = baseConfiguration->second.find("LUN");
+                    if (findLun != baseConfiguration->second.end())
+                    {
+                        lun = std::visit(VariantToUnsignedIntVisitor(),
+                                         findLun->second);
+                    }
+
                     sensorConstruct = std::make_shared<BatteryStatus>(
                         objectServer, dbusConnection, io, sensorName,
-                        deviceName, *interfacePath);
+                        deviceName, *interfacePath, sensorNumber, lun);
 
                     sensorConstruct->setupRead();
                 }
@@ -137,7 +157,7 @@ int main()
             createSensors(io, objectServer, sensors, systemBus, nullptr);
         });
 
-        boost::asio::deadline_timer filterTimer(io);
+        boost::asio::steady_timer filterTimer(io);
         std::function<void(sdbusplus::message::message&)> eventHandler =
             [&](sdbusplus::message::message& message) {
                 if (message.is_method_error())
@@ -147,7 +167,7 @@ int main()
                 }
                 sensorsChanged->insert(message.get_path());
                 // this implicitly cancels the timer
-                filterTimer.expires_from_now(boost::posix_time::seconds(1));
+                filterTimer.expires_after(std::chrono::seconds(1));
                 filterTimer.async_wait(
                     [&](const boost::system::error_code& ec) {
                         if (ec == boost::asio::error::operation_aborted)

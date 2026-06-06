@@ -34,7 +34,6 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
-#include <iostream>
 #include <istream>
 #include <limits>
 #include <memory>
@@ -58,10 +57,11 @@ ADCSensor::ADCSensor(
     std::vector<thresholds::Threshold>&& thresholdsIn, const double scaleFactor,
     const float pollRate, PowerState readState,
     const std::string& sensorConfiguration,
-    std::optional<BridgeGpio>&& bridgeGpio) :
+    std::optional<BridgeGpio>&& bridgeGpio, uint16_t sensorNumber,
+    uint8_t lun) :
     Sensor(escapeName(sensorName), std::move(thresholdsIn), sensorConfiguration,
            "ADC", false, false, maxVoltageReading / scaleFactor,
-           minVoltageReading / scaleFactor, conn, readState),
+           minVoltageReading / scaleFactor, conn, readState, sensorNumber, lun),
     objServer(objectServer), inputDev(io), waitTimer(io), path(path),
     scaleFactor(scaleFactor),
     sensorPollMs(static_cast<unsigned int>(pollRate * 1000)),

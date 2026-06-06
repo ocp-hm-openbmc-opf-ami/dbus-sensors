@@ -3,7 +3,6 @@
 #include <Discrete.hpp>
 #include <Utils.hpp>
 #include <boost/asio/deadline_timer.hpp>
-#include <boost/asio/io_service.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 #include <xyz/openbmc_project/Association/Definitions/server.hpp>
@@ -22,7 +21,8 @@ class OSStatus : public Discrete, public std::enable_shared_from_this<OSStatus>
     OSStatus(sdbusplus::asio::object_server& objectServer,
              std::shared_ptr<sdbusplus::asio::connection>& conn,
              const std::string& sensorName,
-             const std::string& sensorConfiguration);
+             const std::string& sensorConfiguration, uint16_t sensorNumber,
+             uint8_t lun);
     ~OSStatus() override;
 
     std::string status;

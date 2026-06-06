@@ -2,6 +2,8 @@ gpusensor_sources = files(
     'Inventory.cpp',
     'MctpRequester.cpp',
     'NvidiaDeviceDiscovery.cpp',
+    'NvidiaDriverInformation.cpp',
+    'NvidiaEthPort.cpp',
     'NvidiaGpuDevice.cpp',
     'NvidiaGpuEnergySensor.cpp',
     'NvidiaGpuMctpVdm.cpp',
@@ -9,9 +11,17 @@ gpusensor_sources = files(
     'NvidiaGpuPowerSensor.cpp',
     'NvidiaGpuSensor.cpp',
     'NvidiaGpuVoltageSensor.cpp',
+    'NvidiaPcieDevice.cpp',
+    'NvidiaPcieInterface.cpp',
+    'NvidiaPciePort.cpp',
+    'NvidiaPciePortMetrics.cpp',
     'NvidiaSmaDevice.cpp',
     'OcpMctpVdm.cpp',
 )
+
+if not get_option('nvidia-gpu').allowed()
+    subdir_done()
+endif
 
 gpusensor_include_dir = include_directories('.', is_system: true)
 sensor_include_dir = include_directories('../..')

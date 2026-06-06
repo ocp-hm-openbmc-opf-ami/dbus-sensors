@@ -87,6 +87,18 @@ entitymanagerinterface_dep = declare_dependency(
     dependencies: default_deps,
 )
 
+mctpasio_a = static_library(
+    'mctpasio_a',
+    'MctpAsioEndpoint.cpp',
+    dependencies: [boost, phosphor_logging_dep],
+)
+
+mctpasio_dep = declare_dependency(
+    include_directories: ['.'],
+    link_with: [mctpasio_a],
+    dependencies: default_deps,
+)
+
 notifywatch_a = static_library(
     'notifywatch_a',
     'NotifyWatch.cpp',
@@ -104,128 +116,40 @@ if not meson.get_compiler('cpp').has_header('linux/peci-ioctl.h')
     peci_incdirs = ['../include']
 endif
 
+src_inc = include_directories('.')
+
 if get_option('intel-cpu').allowed()
     peci_dep = dependency('libpeci', required: true)
     subdir('intel-cpu')
 endif
 
-if get_option('smbpbi').allowed()
-    subdir('smbpbi')
-endif
-
-if get_option('dbus-adc').allowed()
-    subdir('dbus-adc')
-endif
-
-if get_option('adc').allowed()
-    subdir('adc')
-endif
-
-if get_option('exit-air').allowed()
-    subdir('exit-air')
-endif
-
-if get_option('fan').allowed()
-    subdir('fan')
-endif
-
-if get_option('hwmon-temp').allowed()
-    subdir('hwmon-temp')
-endif
-
-if get_option('intrusion').allowed()
-    subdir('intrusion')
-endif
-
-if get_option('ipmb').allowed()
-    subdir('ipmb')
-endif
-
-if get_option('mctp').allowed()
-    subdir('mctp')
-endif
-
-if get_option('mcu').allowed()
-    subdir('mcu')
-endif
-
-if get_option('nvme').allowed()
-    subdir('nvme')
-endif
-
-if get_option('psu').allowed()
-    subdir('psu')
-endif
-
-if get_option('nvidia-gpu').allowed()
-    subdir('nvidia-gpu')
-endif
-
-if get_option('external').allowed()
-    subdir('external')
-endif
-
-if get_option('tests').allowed()
-    subdir('tests')
-endif
-
-if get_option('leakdetector').allowed()
-    subdir('leakdetector')
-endif
-
-if get_option('cable-monitor').allowed()
-    subdir('cable-monitor')
-endif
-
-if get_option('procstatus').allowed()
-    subdir('procstatus')
-endif
-
-if get_option('system').allowed()
-    subdir('system')
-endif
-
-if get_option('powerunit').allowed()
-    subdir('powerunit')
-endif
-
-if get_option('acpisystem').allowed()
-    subdir('acpisystem')
-endif
-
-if get_option('psustatus').allowed()
-    subdir('psustatus')
-endif
-
-if get_option('osstatus').allowed()
-    subdir('osstatus')
-endif
-
-if get_option('batterystatus').allowed()
-    subdir('batterystatus')
-endif
-
-if get_option('acpidevice').allowed()
-    subdir('acpidevice')
-endif
-
-if get_option('digital').allowed()
-    subdir('digital')
-endif
-
-if get_option('bmc-firmware-health').allowed()
-    subdir('bmc-firmware-health')
-endif
-
-if get_option('damaged-sensor').allowed()
-    subdir('damaged-sensor')
-endif
-
-if get_option('logstatus').allowed()
-    subdir('logstatus')
-endif
-
-if get_option('apisensor').allowed()
-    subdir('apisensor')
-endif
-
+subdir('dbus-adc')
+subdir('adc')
+subdir('cable-monitor')
+subdir('exit-air')
+subdir('external')
+subdir('fan')
+subdir('hwmon-temp')
+subdir('intrusion')
+subdir('ipmb')
+subdir('leakdetector')
+subdir('mctp')
+subdir('mcu')
+subdir('nvidia-gpu')
+subdir('nvme')
+subdir('psu')
+subdir('smbpbi')
+subdir('procstatus')
+subdir('system')
+subdir('powerunit')
+subdir('acpisystem')
+subdir('psustatus')
+subdir('osstatus')
+subdir('batterystatus')
+subdir('acpidevice')
+subdir('digital')
+subdir('bmc-firmware-health')
+subdir('damaged-sensor')
+subdir('logstatus')
+subdir('apisensor')
+subdir('tests')

@@ -80,13 +80,13 @@ static std::unique_ptr<sdbusplus::bus::match_t> chassisMatch = nullptr;
 #ifdef FEATURE_APISENSOR_SUPPORT
 void addSelEntry(
     [[maybe_unused]] std::shared_ptr<sdbusplus::asio::connection>& conn,
-    const std::vector<std::string> logData,
-    const std::vector<uint8_t> eventData, bool assert,
-    /* OPTIONAL */ const AdditionalData addData)
+    const std::vector<std::string>& logData,
+    const std::vector<uint8_t>& eventData, bool assert, uint16_t sensorNumber,
+    const AdditionalData addData)
 {
     // Create a new thread with new io_context to handle the SEL logging
     // to avoid blocking the reactor main thread and causing dbus timeouts.
-    std::thread([logData, eventData, assert, addData]() {
+    std::thread([logData, eventData, assert, addData, sensorNumber]() {
         try
         {
             boost::asio::io_context addSelEntryIoContext;
@@ -98,11 +98,15 @@ void addSelEntry(
             const std::string sensorPath = logData[2];
             std::string redfishId = sensorName + " logged a " + eventName;
 
+            // Add sensor number to additional data
+            AdditionalData selAddData = addData;
+            selAddData["SENSOR_NUM"] = std::to_string(sensorNumber);
+
             // Log SEL event
             auto method = conn->new_method_call(ipmiService, ipmiObjPath,
                                                 ipmiIntf, ipmiSelAddMethod);
             method.append(redfishId, sensorPath, eventData, assert, selBMCGenID,
-                          addData);
+                          selAddData);
             try
             {
                 auto reply = conn->call(method);
@@ -123,13 +127,15 @@ void addSelEntry(
 }
 #else
 void addSelEntry(std::shared_ptr<sdbusplus::asio::connection>& conn,
-                 const std::vector<std::string> logData,
-                 const std::vector<uint8_t> eventData, bool assert)
+                 const std::vector<std::string>& logData,
+                 const std::vector<uint8_t>& eventData, bool assert,
+                 uint16_t sensorNumber, const AdditionalData addData)
 {
     const std::string sensorName = logData[0];
     const std::string eventName = logData[1];
     const std::string sensorPath = logData[2];
-    AdditionalData addData;
+    AdditionalData selAddData = addData;
+    selAddData["SENSOR_NUM"] = std::to_string(sensorNumber);
     std::stringstream stream;
 
     stream << std::hex << std::uppercase << std::setfill('0');
@@ -141,7 +147,7 @@ void addSelEntry(std::shared_ptr<sdbusplus::asio::connection>& conn,
     auto method = conn->new_method_call(ipmiService, ipmiObjPath, ipmiIntf,
                                         ipmiSelAddMethod);
     method.append(redfishId, sensorPath, eventData, assert, selBMCGenID,
-                  addData);
+                  selAddData);
     try
     {
         auto reply = conn->call(method);

@@ -30,6 +30,7 @@ constexpr size_t sensorFailedPollTimeMs = 5000;
 constexpr bool enableInstrumentation = false;
 
 constexpr const char* sensorValueInterface = "xyz.openbmc_project.Sensor.Value";
+constexpr const char* fanStatusIface = "xyz.openbmc_project.Sensor.FanStatus";
 constexpr const char* valueMutabilityInterfaceName =
     "xyz.openbmc_project.Sensor.ValueMutability";
 constexpr const char* availableInterfaceName =
@@ -72,13 +73,16 @@ struct Sensor
            const std::string& configurationPath, const std::string& objectType,
            bool isSettable, bool isMutable, const double max, const double min,
            std::shared_ptr<sdbusplus::asio::connection>& conn,
-           PowerState readState = PowerState::always) :
+           PowerState readState = PowerState::always,
+           uint16_t sensorNumber = defaultSensorNumber,
+           uint8_t lun = defaultLun) :
         name(sensor_paths::escapePathForDbus(name)),
         configurationPath(configurationPath),
         configInterface(configInterfaceName(objectType)),
         isSensorSettable(isSettable), isValueMutable(isMutable), maxValue(max),
         minValue(min), thresholds(std::move(thresholdData)),
-        dbusConnection(conn), readState(readState),
+        dbusConnection(conn), readState(readState), sensorNumber(sensorNumber),
+        lun(lun),
         instrumentation(enableInstrumentation
                             ? std::make_unique<SensorInstrumentation>()
                             : nullptr)
@@ -120,6 +124,8 @@ struct Sensor
     double hysteresisPublish = 1.0;
     std::shared_ptr<sdbusplus::asio::connection> dbusConnection;
     PowerState readState;
+    uint16_t sensorNumber;
+    uint8_t lun;
     size_t errCount{0};
     std::unique_ptr<SensorInstrumentation> instrumentation;
 
@@ -282,6 +288,8 @@ struct Sensor
         sensorInterface->register_property("Unit", unit);
         sensorInterface->register_property("MaxValue", maxValue);
         sensorInterface->register_property("MinValue", minValue);
+        sensorInterface->register_property("SensorNumber", sensorNumber);
+        sensorInterface->register_property("LUN", lun);
         sensorInterface->register_property(
             "Value", value, [this](const double& newValue, double& oldValue) {
                 return setSensorValue(newValue, oldValue);

@@ -40,13 +40,15 @@ class ACPISystemStatus :
   public:
     ACPISystemStatus(sdbusplus::asio::object_server& objectServer,
                      std::shared_ptr<sdbusplus::asio::connection>& conn,
-                     const std::string& sensorName,
-                     const std::string& sensorConfiguration);
+                     const std::string& sensorName, uint16_t sensorNumber,
+                     uint8_t lun, const std::string& sensorConfiguration);
     ~ACPISystemStatus() override;
 
   private:
     uint16_t reading = 0;
     sdbusplus::asio::object_server& objServer;
+    uint16_t sensorNumber;
+    uint8_t lun;
     std::shared_ptr<sdbusplus::bus::match_t> powerMonitor;
     std::shared_ptr<sdbusplus::asio::connection>& conn;
     void monitorState(std::shared_ptr<sdbusplus::asio::connection>& conn);

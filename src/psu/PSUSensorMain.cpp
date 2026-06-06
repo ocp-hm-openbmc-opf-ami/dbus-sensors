@@ -51,7 +51,6 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
-#include <iostream>
 #include <iterator>
 #include <memory>
 #include <regex>
@@ -63,7 +62,7 @@
 #include <vector>
 
 static constexpr bool debug = false;
-static std::regex i2cDevRegex(R"((\/i2c\-\d+\/\d+-[a-fA-F0-9]{4,4})(\/|$))");
+static std::regex devRegex(R"((\/i[23]c\-\d+\/\d+-[a-fA-F0-9]{4,4})(\/|$))");
 
 static const I2CDeviceTypeMap sensorTypes{
     {"ADC128D818", I2CDeviceType{"adc128d818", true}},
@@ -71,6 +70,7 @@ static const I2CDeviceTypeMap sensorTypes{
     {"ADM1272", I2CDeviceType{"adm1272", true}},
     {"ADM1275", I2CDeviceType{"adm1275", true}},
     {"ADM1278", I2CDeviceType{"adm1278", true}},
+    {"ADM1281", I2CDeviceType{"adm1281", true}},
     {"ADM1293", I2CDeviceType{"adm1293", true}},
     {"ADS1015", I2CDeviceType{"ads1015", true}},
     {"ADS7830", I2CDeviceType{"ads7830", true}},
@@ -85,6 +85,7 @@ static const I2CDeviceTypeMap sensorTypes{
     {"INA219", I2CDeviceType{"ina219", true}},
     {"INA226", I2CDeviceType{"ina226", true}},
     {"INA230", I2CDeviceType{"ina230", true}},
+    {"INA233", I2CDeviceType{"ina233", true}},
     {"INA238", I2CDeviceType{"ina238", true}},
     {"IPSPS1", I2CDeviceType{"ipsps1", true}},
     {"IR35221", I2CDeviceType{"ir35221", true}},
@@ -115,18 +116,26 @@ static const I2CDeviceTypeMap sensorTypes{
     {"MAX34451", I2CDeviceType{"max34451", true}},
     {"MP2856", I2CDeviceType{"mp2856", true}},
     {"MP2857", I2CDeviceType{"mp2857", true}},
+    {"MP2869", I2CDeviceType{"mp2869", true}},
     {"MP2971", I2CDeviceType{"mp2971", true}},
     {"MP2973", I2CDeviceType{"mp2973", true}},
     {"MP2975", I2CDeviceType{"mp2975", true}},
+    {"MP2993", I2CDeviceType{"mp2993", true}},
     {"MP5023", I2CDeviceType{"mp5023", true}},
+    {"MP5926", I2CDeviceType{"mp5926", true}},
     {"MP5990", I2CDeviceType{"mp5990", true}},
+    {"MP5998", I2CDeviceType{"mp5998", true}},
+    {"MP9945", I2CDeviceType{"mp9945", true}},
+    {"MP29612", I2CDeviceType{"mp29612", true}},
     {"MPQ8785", I2CDeviceType{"mpq8785", true}},
     {"NCP4200", I2CDeviceType{"ncp4200", true}},
     {"PLI1209BC", I2CDeviceType{"pli1209bc", true}},
     {"pmbus", I2CDeviceType{"pmbus", true}},
     {"PXE1610", I2CDeviceType{"pxe1610", true}},
+    {"SQ52206", I2CDeviceType{"sq52206", true}},
     {"RAA228000", I2CDeviceType{"raa228000", true}},
     {"RAA228004", I2CDeviceType{"raa228004", true}},
+    {"RAA228006", I2CDeviceType{"raa228006", true}},
     {"RAA228228", I2CDeviceType{"raa228228", true}},
     {"RAA228620", I2CDeviceType{"raa228620", true}},
     {"RAA229001", I2CDeviceType{"raa229001", true}},
@@ -207,20 +216,6 @@ void checkGroupEvent(const std::string& directory,
                      GroupEventPathList& groupEventPathList)
 {
     EventPathList pathList;
-    /*
-        std::vector<fs::path> eventPaths;
-        if (!findFiles(fs::path(directory), R"(fan\d+_(alarm|fault))",
-       eventPaths))
-        {
-            return;
-        }
-        for (const auto& eventPath : eventPaths)
-        {
-            std::string attrName = eventPath.filename();
-            pathList[attrName.substr(0,
-       attrName.find('_'))].push_back(eventPath);
-        }
-    */
     std::vector<std::filesystem::path> eventPaths;
     if (!findFiles(std::filesystem::path(directory), R"(fan\d+_(alarm|fault))",
                    eventPaths))
@@ -315,7 +310,8 @@ static void checkPWMSensor(
     if (pwmFile.good())
     {
         pwmSensors[psuName + labelHead] = std::make_unique<PwmSensor>(
-            name, pwmPathStr, dbusConnection, objectServer, objPath, "PSU");
+            name, pwmPathStr, dbusConnection, objectServer, objPath, "PSU",
+            false, defaultSensorNumber, defaultLun);
         return;
     }
 
@@ -326,7 +322,8 @@ static void checkPWMSensor(
     if (rpmFile.good())
     {
         pwmSensors[psuName + labelHead] = std::make_unique<PwmSensor>(
-            name, rpmPathStr, dbusConnection, objectServer, objPath, "PSU");
+            name, rpmPathStr, dbusConnection, objectServer, objPath, "PSU",
+            false, defaultSensorNumber, defaultLun);
         return;
     }
 }
@@ -375,11 +372,8 @@ static void createSensorsCallback(
         {
             // To avoid this error message, add your driver name to
             // the pmbusNames vector at the top of this file.
-            if constexpr (debug)
-            {
-                lg2::error("'{NAME}' not found in sensor whitelist", "NAME",
-                           pmbusName);
-            }
+            lg2::error("'{NAME}' not found in sensor whitelist", "NAME",
+                       pmbusName);
             continue;
         }
 
@@ -400,7 +394,7 @@ static void createSensorsCallback(
                 std::filesystem::canonical(directory / "device");
             std::smatch match;
             // Find /i2c-<bus>/<bus>-<address> match in device path
-            std::regex_search(devicePath, match, i2cDevRegex);
+            std::regex_search(devicePath, match, devRegex);
             if (match.empty())
             {
                 lg2::error("Found bad device path: '{PATH}'", "PATH",
@@ -473,13 +467,10 @@ static void createSensorsCallback(
 
             if ((*confBus != bus) || (*confAddr != addr))
             {
-                if constexpr (debug)
-                {
-                    lg2::error(
-                        "Configuration skipping '{CONFBUS}'-'{CONFADDR}' because not {BUS}-{ADDR}",
-                        "CONFBUS", *confBus, "CONFADDR", *confAddr, "BUS", bus,
-                        "ADDR", addr);
-                }
+                lg2::debug(
+                    "Configuration skipping '{CONFBUS}'-'{CONFADDR}' because not {BUS}-{ADDR}",
+                    "CONFBUS", *confBus, "CONFADDR", *confAddr, "BUS", bus,
+                    "ADDR", addr);
                 continue;
             }
 
@@ -582,10 +573,7 @@ static void createSensorsCallback(
         /* read max value in sysfs for in, curr, power, temp, ... */
         if (!findFiles(directory, R"(\w\d+_max$)", sensorPaths, 0))
         {
-            if constexpr (debug)
-            {
-                lg2::error("No max name in PSU");
-            }
+            lg2::debug("No max name in PSU");
         }
 
         float pollRate = getPollRate(*baseConfig, PSUSensor::defaultSensorPoll);
@@ -654,12 +642,9 @@ static void createSensorsCallback(
                 std::ifstream labelFile(labelPath);
                 if (!labelFile.good())
                 {
-                    if constexpr (debug)
-                    {
-                        lg2::error(
-                            "Input file '{PATH}' has no corresponding label file",
-                            "PATH", sensorPath.string());
-                    }
+                    lg2::debug(
+                        "Input file '{PATH}' has no corresponding label file",
+                        "PATH", sensorPath.string());
                     // hwmon *_input filename with number:
                     // temp1, temp2, temp3, ...
                     labelHead =
@@ -694,12 +679,8 @@ static void createSensorsCallback(
                     if (std::find(findLabels.begin(), findLabels.end(),
                                   labelHead) == findLabels.end())
                     {
-                        if constexpr (debug)
-                        {
-                            lg2::error(
-                                "could not find {LABEL} in the Labels list",
-                                "LABEL", labelHead);
-                        }
+                        lg2::debug("could not find {LABEL} in the Labels list",
+                                   "LABEL", labelHead);
                         continue;
                     }
                 }
@@ -712,24 +693,16 @@ static void createSensorsCallback(
                 labelHead = sensorNameStr.substr(0, findIIOHyphen);
             }
 
-            if constexpr (debug)
-            {
-                lg2::error("Sensor type: {NAME}, label: {LABEL}", "NAME",
-                           sensorNameSubStr, "LABEL", labelHead);
-            }
-
+            lg2::debug("Sensor type: {NAME}, label: {LABEL}", "NAME",
+                       sensorNameSubStr, "LABEL", labelHead);
             if (!findLabels.empty())
             {
                 /* Check if this labelHead is enabled in config file */
                 if (std::find(findLabels.begin(), findLabels.end(),
                               labelHead) == findLabels.end())
                 {
-                    if constexpr (debug)
-                    {
-                        lg2::error(
-                            "could not find '{LABEL}' in the Labels list",
-                            "LABEL", labelHead);
-                    }
+                    lg2::error("could not find '{LABEL}' in the Labels list",
+                               "LABEL", labelHead);
                     continue;
                 }
             }
@@ -758,7 +731,8 @@ static void createSensorsCallback(
             // Protect the hardcoded labelMatch list from changes,
             // by making a copy and modifying that instead.
             // Avoid bleedthrough of one device's customizations to
-            // the next device, as each should be independently customizable.
+            // the next device, as each should be independently
+            // customizable.
             PSUProperty psuProperty = findProperty->second;
 
             // Use label head as prefix for reading from config file,
@@ -862,6 +836,79 @@ static void createSensorsCallback(
                 }
             }
 
+            uint16_t sensorNumber = defaultSensorNumber;
+            uint8_t lun = defaultLun;
+
+            /* key: vin1_SensorNumber, vout1_SensorNumber etc */
+            std::string keySensorNum = labelHead + "_SensorNumber";
+            std::string keyLun = labelHead + "_LUN";
+
+            auto findSensorNum = baseConfig->find(keySensorNum);
+            if (findSensorNum != baseConfig->end())
+            {
+                try
+                {
+                    sensorNumber = static_cast<uint16_t>(std::visit(
+                        VariantToUnsignedIntVisitor(), findSensorNum->second));
+                }
+                catch (const std::exception& ex)
+                {
+                    lg2::error(
+                        "ERROR: Invalid SensorNumber for '{LABEL}': {ERR}",
+                        "LABEL", labelHead, "ERR", ex.what());
+                }
+            }
+            else
+            {
+                auto findBaseSensorNum = baseConfig->find("SensorNumber");
+                if (findBaseSensorNum != baseConfig->end())
+                {
+                    try
+                    {
+                        sensorNumber = static_cast<uint16_t>(
+                            std::visit(VariantToUnsignedIntVisitor(),
+                                       findBaseSensorNum->second));
+                    }
+                    catch (const std::exception& ex)
+                    {
+                        lg2::error("ERROR: Invalid base SensorNumber: {ERR}",
+                                   "ERR", ex.what());
+                    }
+                }
+            }
+
+            auto findLun = baseConfig->find(keyLun);
+            if (findLun != baseConfig->end())
+            {
+                try
+                {
+                    lun = static_cast<uint8_t>(std::visit(
+                        VariantToUnsignedIntVisitor(), findLun->second));
+                }
+                catch (const std::exception& ex)
+                {
+                    lg2::error("ERROR: Invalid LUN for '{LABEL}': {ERR}",
+                               "LABEL", labelHead, "ERR", ex.what());
+                }
+            }
+            else
+            {
+                auto findBaseLun = baseConfig->find("LUN");
+                if (findBaseLun != baseConfig->end())
+                {
+                    try
+                    {
+                        lun = static_cast<uint8_t>(
+                            std::visit(VariantToUnsignedIntVisitor(),
+                                       findBaseLun->second));
+                    }
+                    catch (const std::exception& ex)
+                    {
+                        lg2::error("ERROR: Invalid base LUN: {ERR}", "ERR",
+                                   ex.what());
+                    }
+                }
+            }
             // if we find label head power state set ，override the powerstate.
             auto findPowerState = baseConfig->find(keyPowerState);
             if (findPowerState != baseConfig->end())
@@ -914,13 +961,9 @@ static void createSensorsCallback(
 
                 psuNameFromIndex = psuNames[nameIndex];
 
-                if constexpr (debug)
-                {
-                    lg2::error(
-                        "'{LABEL}' paired with '{NAME}' at index '{INDEX}'",
-                        "LABEL", labelHead, "NAME", psuNameFromIndex, "INDEX",
-                        nameIndex);
-                }
+                lg2::debug("'{LABEL}' paired with '{NAME}' at index '{INDEX}'",
+                           "LABEL", labelHead, "NAME", psuNameFromIndex,
+                           "INDEX", nameIndex);
             }
 
             if (sensorType == "pmbus")
@@ -952,12 +995,9 @@ static void createSensorsCallback(
                                         findScaleFactor->second);
                 }
 
-                if constexpr (debug)
-                {
-                    lg2::error(
-                        "Sensor scaling factor '{FACTOR}' string '{SCALE_FACTOR}'",
-                        "FACTOR", factor, "SCALE_FACTOR", strScaleFactor);
-                }
+                lg2::debug(
+                    "Sensor scaling factor '{FACTOR}' string '{SCALE_FACTOR}'",
+                    "FACTOR", factor, "SCALE_FACTOR", strScaleFactor);
             }
 
             std::vector<thresholds::Threshold> sensorThresholds;
@@ -976,16 +1016,12 @@ static void createSensorsCallback(
                 continue;
             }
 
-            if constexpr (debug)
-            {
-                lg2::error("Sensor properties - Name: {NAME}, Scale: {SCALE}, "
-                           "Min: {MIN}, Max: {MAX}, Offset: {OFFSET}",
-                           "NAME", psuProperty.labelTypeName, "SCALE",
-                           psuProperty.sensorScaleFactor, "MIN",
-                           psuProperty.minReading, "MAX",
-                           psuProperty.maxReading, "OFFSET",
-                           psuProperty.sensorOffset);
-            }
+            lg2::debug("Sensor properties - Name: {NAME}, Scale: {SCALE}, "
+                       "Min: {MIN}, Max: {MAX}, Offset: {OFFSET}",
+                       "NAME", psuProperty.labelTypeName, "SCALE",
+                       psuProperty.sensorScaleFactor, "MIN",
+                       psuProperty.minReading, "MAX", psuProperty.maxReading,
+                       "OFFSET", psuProperty.sensorOffset);
 
             std::string sensorName = psuProperty.labelTypeName;
             if (customizedName)
@@ -1012,12 +1048,9 @@ static void createSensorsCallback(
                 }
             }
 
-            if constexpr (debug)
-            {
-                lg2::error("Sensor name: {NAME}, path: {PATH}, type: {TYPE}",
-                           "NAME", sensorName, "PATH", sensorPathStr, "TYPE",
-                           sensorType);
-            }
+            lg2::debug("Sensor name: {NAME}, path: {PATH}, type: {TYPE}",
+                       "NAME", sensorName, "PATH", sensorPathStr, "TYPE",
+                       sensorType);
             // destruct existing one first if already created
 
             auto& sensor = sensors[sensorName];
@@ -1038,14 +1071,10 @@ static void createSensorsCallback(
                     readState, findSensorUnit->second, factor,
                     psuProperty.maxReading, psuProperty.minReading,
                     psuProperty.sensorOffset, labelHead, thresholdConfSize,
-                    pollRate, i2cDev);
+                    pollRate, i2cDev, sensorNumber, lun);
                 sensors[sensorName]->setupRead();
                 ++numCreated;
-                if constexpr (debug)
-                {
-                    lg2::error("Created '{NUM}' sensors so far", "NUM",
-                               numCreated);
-                }
+                lg2::debug("Created '{NUM}' sensors so far", "NUM", numCreated);
             }
         }
 
@@ -1061,10 +1090,7 @@ static void createSensorsCallback(
         }
     }
 
-    if constexpr (debug)
-    {
-        lg2::error("Created total of '{NUM}' sensors", "NUM", numCreated);
-    }
+    lg2::debug("Created total of '{NUM}' sensors", "NUM", numCreated);
 }
 
 static void getPresentCpus(
@@ -1086,11 +1112,7 @@ static void getPresentCpus(
     }
     catch (sdbusplus::exception_t& e)
     {
-        if constexpr (debug)
-        {
-            lg2::error("error getting inventory item subtree: '{ERR}'", "ERR",
-                       e);
-        }
+        lg2::error("error getting inventory item subtree: '{ERR}'", "ERR", e);
         return;
     }
 
@@ -1253,11 +1275,6 @@ int main()
     boost::asio::steady_timer filterTimer(io);
     std::function<void(sdbusplus::message_t&)> eventHandler =
         [&](sdbusplus::message_t& message) {
-            if (message.is_method_error())
-            {
-                lg2::error("callback method error");
-                return;
-            }
             sensorsChanged->insert(message.get_path());
             filterTimer.expires_after(std::chrono::seconds(3));
             filterTimer.async_wait([&](const boost::system::error_code& ec) {

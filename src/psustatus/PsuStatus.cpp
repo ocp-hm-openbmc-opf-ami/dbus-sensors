@@ -15,11 +15,18 @@ PsuStatus::PsuStatus(
     boost::asio::io_context& io __attribute__((unused)),
     const std::string& sensorName, const uint64_t bus, const uint64_t address,
     boost::container::flat_map<std::string, std::vector<std::string>> pathList,
-    const std::string& sensorConfiguration) :
-    Discrete(escapeName(sensorName), sensorConfiguration, conn),
-    objServer(objectServer), inputDev(io), waitTimer(io), bus(bus),
+    const std::string& sensorConfiguration, uint16_t sensorNumber,
+    uint8_t lun) :
+    Discrete(escapeName(sensorName), sensorConfiguration, conn, sensorNumber,
+             lun),
+    conn(conn), objServer(objectServer), inputDev(io), waitTimer(io), bus(bus),
     address(address), eventPathList(pathList)
 {
+    if (!conn)
+    {
+        throw std::invalid_argument("D-Bus connection is null");
+    }
+
     sensorInterface = objectServer.add_interface(
         "/xyz/openbmc_project/sensors/powersupply/" + name,
         "xyz.openbmc_project.Sensor.State");
@@ -27,6 +34,7 @@ PsuStatus::PsuStatus(
     association = objectServer.add_interface(
         "/xyz/openbmc_project/sensors/powersupply/" + name,
         association::interface);
+
     setInitialProperties();
 }
 
@@ -80,14 +88,31 @@ void PsuStatus::initHwmonPath(const uint64_t bus, const uint64_t address)
         fsPath = findFile(hwmonPath, targetFilename);
         if (fsPath.empty())
         {
+            std::vector<std::string> logData = {
+                name, "Configuration error",
+                "/xyz/openbmc_project/sensors/powersupply/" + name,
+                "PsuStatus"};
+            std::vector<uint8_t> eventData = {0x06, 0x00, 0x00};
+            addSelEntry(conn, logData, eventData, true, sensorNumber);
             updateState(sensorInterface,
                         (static_cast<uint16_t>(PsuEvent::psuConfigurationErr)));
             std::cerr << "filePath not found \n";
         }
         else
         {
+            if (!presenceLogged)
+            {
+                std::string baseObj =
+                    "/xyz/openbmc_project/sensors/powersupply/";
+                std::vector<std::string> logData = {
+                    name, "Presence detected", baseObj + name, "PsuStatus"};
+                std::vector<uint8_t> eventData = {0x00, 0x00, 0x00};
+
+                addSelEntry(conn, logData, eventData, true, sensorNumber);
+                presenceLogged = true;
+            }
             updateState(sensorInterface,
-                        (static_cast<uint16_t>(PsuEvent::psuPresenceDetected)));
+                        static_cast<uint8_t>(PsuEvent::psuPresenceDetected));
         }
     }
 
@@ -118,7 +143,7 @@ void PsuStatus::setupRead()
         for (const auto& eventAttr : eventAttrs)
         {
             int value = 0;
-            uint16_t offset = 0;
+            uint8_t offset = 0;
             std::string hwmonPath = eventAttr;
             std::ifstream stream(hwmonPath);
             if (!stream.good())
@@ -140,16 +165,31 @@ void PsuStatus::setupRead()
                 continue;
             }
 
-            offset = static_cast<uint16_t>(findEvent->second);
+            offset = static_cast<uint8_t>(findEvent->second);
+
+            bool& lastValue = lastEventValues[strr];
+
+            if (value && !lastValue)
+            {
+                std::vector<std::string> logData = {
+                    name, strr,
+                    "/xyz/openbmc_project/sensors/powersupply/" + name,
+                    "PsuStatus"};
+
+                std::vector<uint8_t> eventData = {offset, 0x00, 0x00};
+
+                addSelEntry(conn, logData, eventData, true, sensorNumber);
+            }
+            lastValue = value;
             updateEvent(offset, value);
             restartRead();
         }
     }
     restartRead();
 }
-void PsuStatus::updateEvent(uint16_t offset, uint16_t value)
+void PsuStatus::updateEvent(uint8_t offset, uint8_t value)
 {
-    uint16_t newValue = state;
+    uint8_t newValue = state;
     if (value)
     {
         newValue |= offset;
@@ -160,7 +200,7 @@ void PsuStatus::updateEvent(uint16_t offset, uint16_t value)
     }
     if (newValue != state)
     {
-        updateState(sensorInterface, (static_cast<uint16_t>(newValue)));
+        updateState(sensorInterface, (static_cast<uint8_t>(newValue)));
     }
 }
 void PsuStatus::restartRead(void)

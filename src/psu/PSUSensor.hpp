@@ -13,6 +13,7 @@
 
 #include <array>
 #include <cstddef>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <utility>
@@ -30,7 +31,8 @@ class PSUSensor : public Sensor, public std::enable_shared_from_this<PSUSensor>
               const PowerState& powerState, const std::string& sensorUnits,
               unsigned int factor, double max, double min, double offset,
               const std::string& label, size_t tSize, double pollRate,
-              const std::shared_ptr<I2CDevice>& i2cDevice);
+              const std::shared_ptr<I2CDevice>& i2cDevice,
+              uint16_t sensorNumber, uint8_t lun);
     ~PSUSensor() override;
     void setupRead();
     void activate(const std::string& newPath,

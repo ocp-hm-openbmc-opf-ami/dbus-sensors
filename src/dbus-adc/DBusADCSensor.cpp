@@ -16,9 +16,9 @@
 
 #include "DBusADCSensor.hpp"
 
-#include <boost/date_time/posix_time/posix_time.hpp>
 #include <sdbusplus/asio/property.hpp>
 
+#include <chrono>
 #include <variant>
 
 static constexpr double roundFactor = 10000; // 3 decimal places
@@ -34,10 +34,11 @@ DBusADCSensor::DBusADCSensor(
     const double Vref, const unsigned ResolutionBits, const double ScaleFactor,
     const float PollRate, PowerState ReadState,
     const std::string& SensorConfiguration,
-    std::optional<BridgeGpio>&& BridgeGpio) :
+    std::optional<BridgeGpio>&& BridgeGpio, uint16_t SensorNumber,
+    uint8_t Lun) :
     Sensor(escapeName(SensorName), std::move(Thresholds), SensorConfiguration,
            sensorObjectType, false, false, Vref / ScaleFactor, 0,
-           DbusConnection, ReadState),
+           DbusConnection, ReadState, SensorNumber, Lun),
     std::enable_shared_from_this<DBusADCSensor>(), objServer(ObjectServer),
     dbusConn(DbusConnection), waitTimer(Io), dbusAdcService(DbusAdcService),
     dbusAdcObjPath(DbusAdcObjPath), dbusAdcIface(DbusAdcIface),
@@ -103,8 +104,8 @@ void DBusADCSensor::setupRead(void)
 
         std::weak_ptr<DBusADCSensor> weakRef = weak_from_this();
 
-        waitTimer.expires_from_now(
-            boost::posix_time::milliseconds(bridgeGpio->getSetupTimeMs()));
+        waitTimer.expires_after(
+            std::chrono::milliseconds(bridgeGpio->getSetupTimeMs()));
         waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
             if (ec == boost::asio::error::operation_aborted)
             {
@@ -155,7 +156,7 @@ void DBusADCSensor::handleResponse(const boost::system::error_code& err,
 
     std::weak_ptr<DBusADCSensor> weakRef = weak_from_this();
 
-    waitTimer.expires_from_now(boost::posix_time::milliseconds(sensorPollMs));
+    waitTimer.expires_after(std::chrono::milliseconds(sensorPollMs));
     waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
         if (ec == boost::asio::error::operation_aborted)
         {

@@ -36,7 +36,6 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <iostream>
 #include <memory>
 #include <optional>
 #include <string>
@@ -56,10 +55,11 @@ TachSensor::TachSensor(
     std::vector<thresholds::Threshold>&& thresholdsIn,
     const std::string& sensorConfiguration,
     const std::pair<double, double>& limits, const PowerState& powerState,
-    const std::optional<std::string>& ledIn) :
+    const std::optional<std::string>& ledIn, uint16_t sensorNumber,
+    uint8_t lun) :
     Sensor(escapeName(fanName), std::move(thresholdsIn), sensorConfiguration,
            objectType, false, false, limits.second, limits.first, conn,
-           powerState),
+           powerState, sensorNumber, lun),
     objServer(objectServer), redundancy(redundancy), presence(presenceGpio),
     inputDev(io, path, boost::asio::random_access_file::read_only),
     waitTimer(io), path(path), led(ledIn)
@@ -148,6 +148,21 @@ void TachSensor::restartRead(size_t pollTime)
     });
 }
 
+void TachSensor::signalConnectedStatus(bool connected)
+{
+    if (connectedState == connected)
+    {
+        return;
+    }
+
+    connectedState = connected;
+    std::string objPath = "/xyz/openbmc_project/sensors/fan_tach/" + name;
+    auto msg = dbusConnection->new_signal(objPath.c_str(), fanStatusIface,
+                                          "FanRunning");
+    msg.append(connected);
+    msg.signal_send();
+}
+
 void TachSensor::handleResponse(const boost::system::error_code& err,
                                 size_t bytesRead)
 {
@@ -156,6 +171,7 @@ void TachSensor::handleResponse(const boost::system::error_code& err,
     {
         lg2::error("TachSensor '{NAME}' removed '{PATH}'", "NAME", name, "PATH",
                    path);
+        signalConnectedStatus(false);
         return; // we're being destroyed
     }
     bool missing = false;
@@ -182,16 +198,19 @@ void TachSensor::handleResponse(const boost::system::error_code& err,
             if (ret.ec != std::errc())
             {
                 incrementError();
+                signalConnectedStatus(false);
                 pollTime = sensorFailedPollTimeMs;
             }
             else
             {
+                signalConnectedStatus(nvalue > 0);
                 updateValue(nvalue);
             }
         }
         else
         {
             incrementError();
+            signalConnectedStatus(false);
             pollTime = sensorFailedPollTimeMs;
         }
     }

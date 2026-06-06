@@ -5,7 +5,8 @@
 
 #include "MctpRequester.hpp"
 
-#include <linux/mctp.h>
+#include "MctpAsioEndpoint.hpp"
+
 #include <sys/socket.h>
 
 #include <OcpMctpVdm.hpp>
@@ -97,7 +98,7 @@ void MctpRequester::processRecvMsg(const boost::system::error_code& ec,
         return;
     }
 
-    if (*receivedMsgType != msgType)
+    if (*receivedMsgType != ocp::accelerator_management::messageType)
     {
         // we received a message that this handler doesn't support
         // drop it on the floor and rebind receive_from
@@ -255,7 +256,7 @@ void MctpRequester::handleResult(uint8_t eid, const std::error_code& ec,
         // and since this daemon services all nvidia iana commands
         // for a given system, we should only restart the service if its
         // unrecoverable, i.e. if we get error codes that the client
-        // can't reasonably deal with. If thats the cause, restart
+        // can't reasonably deal with. If that's the cause, restart
         // and hope that we can deal with it then.
         // since we're fully async, the only reasonable way to bubble
         // this issue up is to chuck an exception and let main deal with it.
@@ -344,16 +345,11 @@ void MctpRequester::processQueue(uint8_t eid)
         return;
     }
 
-    struct sockaddr_mctp addr{};
-    addr.smctp_family = AF_MCTP;
-    addr.smctp_addr.s_addr = eid;
-    addr.smctp_type = msgType;
-    addr.smctp_tag = MCTP_TAG_OWNER;
-
-    sendEndPoint = {&addr, sizeof(addr)};
-
+    MctpAsioEndpoint sendEndPoint(eid,
+                                  ocp::accelerator_management::messageType);
+    boost::asio::const_buffer buf(req.data(), req.size());
     mctpSocket.async_send_to(
-        boost::asio::const_buffer(req.data(), req.size()), sendEndPoint,
+        buf, sendEndPoint.endpoint,
         std::bind_front(&MctpRequester::handleSendMsgCompletion, this, eid));
 }
 

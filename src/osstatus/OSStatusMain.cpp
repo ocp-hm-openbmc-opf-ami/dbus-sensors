@@ -1,11 +1,14 @@
 #include <OSStatus.hpp>
+#include <Utils.hpp>
 #include <VariantVisitors.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/container/flat_set.hpp>
 #include <sdbusplus/bus/match.hpp>
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -61,6 +64,40 @@ void createSensors(
                 std::string sensorName =
                     std::get<std::string>(findSensorName->second);
 
+                uint16_t sensorNumber = defaultSensorNumber;
+                uint8_t lun = defaultLun;
+                auto findSensorNum =
+                    baseConfiguration->second.find("SensorNumber");
+                if (findSensorNum != baseConfiguration->second.end())
+                {
+                    try
+                    {
+                        sensorNumber = static_cast<uint16_t>(
+                            std::visit(VariantToUnsignedIntVisitor(),
+                                       findSensorNum->second));
+                    }
+                    catch (const std::exception&)
+                    {
+                        std::cerr << "Invalid SensorNumber for " << sensorName
+                                  << "\n";
+                        sensorNumber = defaultSensorNumber;
+                    }
+                }
+
+                auto findLun = baseConfiguration->second.find("LUN");
+                if (findLun != baseConfiguration->second.end())
+                {
+                    try
+                    {
+                        lun = static_cast<uint8_t>(std::visit(
+                            VariantToUnsignedIntVisitor(), findLun->second));
+                    }
+                    catch (const std::exception&)
+                    {
+                        std::cerr << "Invalid LUN for " << sensorName << "\n";
+                    }
+                }
+
                 // on rescans, only update sensors we were signaled by
                 auto findSensor = sensors.find(sensorName);
                 if (!firstScan && findSensor != sensors.end())
@@ -88,7 +125,8 @@ void createSensors(
                 sensorConstruct = nullptr;
 
                 sensorConstruct = std::make_shared<OSStatus>(
-                    objectServer, dbusConnection, sensorName, *interfacePath);
+                    objectServer, dbusConnection, sensorName, *interfacePath,
+                    sensorNumber, lun);
             }
         });
 
@@ -111,7 +149,7 @@ int main()
         createSensors(io, objectServer, sensors, systemBus, nullptr);
     });
 
-    boost::asio::deadline_timer filterTimer(io);
+    boost::asio::steady_timer filterTimer(io);
     std::function<void(sdbusplus::message::message&)> eventHandler =
         [&](sdbusplus::message::message& message) {
             if (message.is_method_error())
@@ -121,7 +159,7 @@ int main()
             }
             sensorsChanged->insert(message.get_path());
             // this implicitly cancels the timer
-            filterTimer.expires_from_now(boost::posix_time::seconds(1));
+            filterTimer.expires_after(std::chrono::seconds(1));
 
             filterTimer.async_wait([&](const boost::system::error_code& ec) {
                 if (ec == boost::asio::error::operation_aborted)

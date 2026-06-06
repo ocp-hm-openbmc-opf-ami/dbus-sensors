@@ -1,4 +1,6 @@
-src_inc = include_directories('..')
+if not get_option('dbus-adc').allowed()
+    subdir_done()
+endif
 
 executable(
     'dbusadcsensor',

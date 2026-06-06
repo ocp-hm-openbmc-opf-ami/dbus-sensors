@@ -9,9 +9,16 @@
 
 #include <endian.h>
 
+#include <bit>
 #include <cerrno>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <functional>
+#include <limits>
 #include <span>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace gpu
@@ -411,6 +418,74 @@ int decodeGetVoltageResponse(std::span<const uint8_t> buf,
     return 0;
 }
 
+int encodeGetDriverInformationRequest(uint8_t instanceId,
+                                      std::span<uint8_t> buf)
+{
+    if (buf.size() < sizeof(ocp::accelerator_management::CommonRequest))
+    {
+        return EINVAL;
+    }
+
+    auto* msg = reinterpret_cast<ocp::accelerator_management::CommonRequest*>(
+        buf.data());
+
+    ocp::accelerator_management::BindingPciVidInfo header{};
+    header.ocp_accelerator_management_msg_type =
+        static_cast<uint8_t>(ocp::accelerator_management::MessageType::REQUEST);
+    header.instance_id = instanceId &
+                         ocp::accelerator_management::instanceIdBitMask;
+    header.msg_type = static_cast<uint8_t>(MessageType::PLATFORM_ENVIRONMENTAL);
+
+    auto rc = packHeader(header, msg->msgHdr.hdr);
+
+    if (rc != 0)
+    {
+        return rc;
+    }
+
+    msg->command = static_cast<uint8_t>(
+        PlatformEnvironmentalCommands::GET_DRIVER_INFORMATION);
+    msg->data_size = 0;
+
+    return 0;
+}
+
+int decodeGetDriverInformationResponse(
+    std::span<const uint8_t> buf,
+    ocp::accelerator_management::CompletionCode& cc, uint16_t& reasonCode,
+    DriverState& driverState, std::string& driverVersion)
+{
+    auto rc =
+        ocp::accelerator_management::decodeReasonCodeAndCC(buf, cc, reasonCode);
+
+    if (rc != 0 || cc != ocp::accelerator_management::CompletionCode::SUCCESS)
+    {
+        return rc;
+    }
+
+    if (buf.size() < sizeof(GetDriverInformationResponse))
+    {
+        return EINVAL;
+    }
+
+    const auto* response =
+        reinterpret_cast<const GetDriverInformationResponse*>(buf.data());
+
+    const uint16_t dataSize = le16toh(response->hdr.data_size);
+
+    if (dataSize < sizeof(DriverState) + sizeof(char))
+    {
+        return EINVAL;
+    }
+
+    driverState = response->driverState;
+    const size_t versionSize =
+        buf.size() - sizeof(GetDriverInformationResponse);
+    driverVersion = std::string(&response->driverVersion, versionSize);
+
+    return 0;
+}
+
 int encodeGetInventoryInformationRequest(uint8_t instanceId, uint8_t propertyId,
                                          std::span<uint8_t> buf)
 {
@@ -483,11 +558,337 @@ int decodeGetInventoryInformationResponse(
         case InventoryPropertyId::DEVICE_GUID:
             value = std::vector<uint8_t>(dataPtr, dataPtr + dataSize);
             break;
+        case InventoryPropertyId::DEFAULT_BOOST_CLOCKS:
+        {
+            if (dataSize != sizeof(uint32_t))
+            {
+                return EINVAL;
+            }
+            uint32_t clockMhz =
+                le32toh(*std::bit_cast<const uint32_t*>(dataPtr));
+            value = clockMhz;
+            break;
+        }
         default:
             return EINVAL;
     }
     return 0;
 }
 
+int encodeQueryScalarGroupTelemetryV2Request(
+    uint8_t instanceId, PciePortType portType, uint8_t upstreamPortNumber,
+    uint8_t portNumber, uint8_t groupId, std::span<uint8_t> buf)
+{
+    if (buf.size() < sizeof(QueryScalarGroupTelemetryV2Request))
+    {
+        return EINVAL;
+    }
+
+    auto* msg =
+        reinterpret_cast<QueryScalarGroupTelemetryV2Request*>(buf.data());
+
+    ocp::accelerator_management::BindingPciVidInfo header{};
+    header.ocp_accelerator_management_msg_type =
+        static_cast<uint8_t>(ocp::accelerator_management::MessageType::REQUEST);
+    header.instance_id = instanceId &
+                         ocp::accelerator_management::instanceIdBitMask;
+    header.msg_type = static_cast<uint8_t>(MessageType::PCIE_LINK);
+
+    auto rc = packHeader(header, msg->hdr.msgHdr.hdr);
+
+    if (rc != 0)
+    {
+        return rc;
+    }
+
+    msg->hdr.command =
+        static_cast<uint8_t>(PcieLinkCommands::QueryScalarGroupTelemetryV2);
+    msg->hdr.data_size = 3;
+    msg->upstreamPortNumber =
+        (static_cast<uint8_t>(portType) << 7) | (upstreamPortNumber & 0x7F);
+    msg->portNumber = portNumber;
+    msg->groupId = groupId;
+
+    return 0;
+}
+
+int decodeQueryScalarGroupTelemetryV2Response(
+    std::span<const uint8_t> buf,
+    ocp::accelerator_management::CompletionCode& cc, uint16_t& reasonCode,
+    size_t& numTelemetryValues, std::vector<uint32_t>& telemetryValues)
+{
+    auto rc =
+        ocp::accelerator_management::decodeReasonCodeAndCC(buf, cc, reasonCode);
+
+    if (rc != 0 || cc != ocp::accelerator_management::CompletionCode::SUCCESS)
+    {
+        return rc;
+    }
+
+    if (buf.size() < sizeof(ocp::accelerator_management::CommonResponse))
+    {
+        return EINVAL;
+    }
+
+    const auto* response =
+        reinterpret_cast<const ocp::accelerator_management::CommonResponse*>(
+            buf.data());
+
+    const uint16_t dataSize = le16toh(response->data_size);
+
+    if (buf.size() <
+        dataSize + sizeof(ocp::accelerator_management::CommonResponse))
+    {
+        return EINVAL;
+    }
+
+    numTelemetryValues = dataSize / sizeof(uint32_t);
+
+    if (telemetryValues.size() < numTelemetryValues)
+    {
+        telemetryValues.resize(numTelemetryValues);
+    }
+
+    const auto* telemetryDataPtr =
+        buf.data() + sizeof(ocp::accelerator_management::CommonResponse);
+
+    for (size_t i = 0; i < numTelemetryValues; i++)
+    {
+        std::memcpy(&telemetryValues[i],
+                    telemetryDataPtr + i * sizeof(uint32_t), sizeof(uint32_t));
+
+        telemetryValues[i] = le32toh(telemetryValues[i]);
+    }
+
+    return 0;
+}
+
+int encodeListPciePortsRequest(uint8_t instanceId, std::span<uint8_t> buf)
+{
+    if (buf.size() < sizeof(ocp::accelerator_management::CommonRequest))
+    {
+        return EINVAL;
+    }
+
+    auto* msg = reinterpret_cast<ocp::accelerator_management::CommonRequest*>(
+        buf.data());
+
+    ocp::accelerator_management::BindingPciVidInfo header{};
+    header.ocp_accelerator_management_msg_type =
+        static_cast<uint8_t>(ocp::accelerator_management::MessageType::REQUEST);
+    header.instance_id = instanceId &
+                         ocp::accelerator_management::instanceIdBitMask;
+    header.msg_type = static_cast<uint8_t>(MessageType::PCIE_LINK);
+
+    auto rc = packHeader(header, msg->msgHdr.hdr);
+
+    if (rc != 0)
+    {
+        return rc;
+    }
+
+    msg->command = static_cast<uint8_t>(PcieLinkCommands::ListPCIePorts);
+    msg->data_size = 0;
+
+    return 0;
+}
+
+int decodeListPciePortsResponse(
+    std::span<const uint8_t> buf,
+    ocp::accelerator_management::CompletionCode& cc, uint16_t& reasonCode,
+    uint16_t& numUpstreamPorts, std::vector<uint8_t>& numDownstreamPorts)
+{
+    auto rc =
+        ocp::accelerator_management::decodeReasonCodeAndCC(buf, cc, reasonCode);
+
+    if (rc != 0 || cc != ocp::accelerator_management::CompletionCode::SUCCESS)
+    {
+        return rc;
+    }
+
+    if (buf.size() < sizeof(ListPCIePortsResponse))
+    {
+        return EINVAL;
+    }
+
+    const auto* response =
+        reinterpret_cast<const ListPCIePortsResponse*>(buf.data());
+
+    const uint16_t dataSize = le16toh(response->hdr.data_size);
+
+    if (dataSize < sizeof(uint16_t))
+    {
+        return EINVAL;
+    }
+
+    uint16_t upstreamPorts = le16toh(response->numUpstreamPorts);
+
+    numUpstreamPorts = 0;
+    numDownstreamPorts.clear();
+    numDownstreamPorts.reserve(upstreamPorts);
+
+    size_t offset = sizeof(ListPCIePortsResponse);
+
+    for (size_t i = 0; i < upstreamPorts; i++)
+    {
+        if (offset + sizeof(ListPCIePortsDownstreamPortsData) > buf.size())
+        {
+            return EINVAL;
+        }
+
+        const auto* downstreamPortData =
+            reinterpret_cast<const ListPCIePortsDownstreamPortsData*>(
+                buf.data() + offset);
+
+        // Count only external upstream ports
+        if (downstreamPortData->isInternal == 0)
+        {
+            ++numUpstreamPorts;
+            numDownstreamPorts.push_back(downstreamPortData->count);
+        }
+
+        offset += sizeof(ListPCIePortsDownstreamPortsData);
+    }
+
+    return 0;
+}
+
+int encodeGetPortNetworkAddressesRequest(
+    uint8_t instanceId, uint16_t portNumber, std::span<uint8_t> buf)
+{
+    if (buf.size() < sizeof(GetPortNetworkAddressesRequest))
+    {
+        return EINVAL;
+    }
+
+    auto* msg = std::bit_cast<GetPortNetworkAddressesRequest*>(buf.data());
+
+    ocp::accelerator_management::BindingPciVidInfo header{};
+    header.ocp_accelerator_management_msg_type =
+        static_cast<uint8_t>(ocp::accelerator_management::MessageType::REQUEST);
+    header.instance_id = instanceId &
+                         ocp::accelerator_management::instanceIdBitMask;
+    header.msg_type = static_cast<uint8_t>(MessageType::NETWORK_PORT);
+
+    auto rc = packHeader(header, msg->hdr.msgHdr.hdr);
+
+    if (rc != 0)
+    {
+        return rc;
+    }
+
+    msg->hdr.command =
+        static_cast<uint8_t>(NetworkPortCommands::GetPortNetworkAddresses);
+    msg->hdr.data_size = sizeof(portNumber);
+    msg->portNumber = le16toh(portNumber);
+
+    return 0;
+}
+
+int decodeGetPortNetworkAddressesResponse(
+    std::span<const uint8_t> buf,
+    ocp::accelerator_management::CompletionCode& cc, uint16_t& reasonCode,
+    NetworkPortLinkType& linkType,
+    std::vector<std::pair<uint8_t, uint64_t>>& addresses)
+{
+    addresses.clear();
+    addresses.reserve(std::numeric_limits<uint8_t>::max());
+
+    const int rc = ocp::accelerator_management::decodeAggregateResponse(
+        buf, cc, reasonCode,
+        [&linkType, &addresses](const uint8_t tag, const uint8_t length,
+                                const uint8_t* value) -> int {
+            if (tag == 0 && length == 1)
+            {
+                linkType = static_cast<NetworkPortLinkType>(*value);
+                return 0;
+            }
+
+            if (length == sizeof(uint64_t))
+            {
+                uint64_t telemetryData = 0;
+                std::memcpy(&telemetryData, value, sizeof(uint64_t));
+                addresses.emplace_back(tag, le64toh(telemetryData));
+            }
+
+            return 0;
+        });
+
+    return rc;
+}
+
+int encodeGetEthernetPortTelemetryCountersRequest(
+    uint8_t instanceId, uint16_t portNumber, std::span<uint8_t> buf)
+{
+    if (buf.size() < sizeof(GetEthernetPortTelemetryCountersRequest))
+    {
+        return EINVAL;
+    }
+
+    auto* msg =
+        std::bit_cast<GetEthernetPortTelemetryCountersRequest*>(buf.data());
+
+    ocp::accelerator_management::BindingPciVidInfo header{};
+    header.ocp_accelerator_management_msg_type =
+        static_cast<uint8_t>(ocp::accelerator_management::MessageType::REQUEST);
+    header.instance_id = instanceId &
+                         ocp::accelerator_management::instanceIdBitMask;
+    header.msg_type = static_cast<uint8_t>(MessageType::NETWORK_PORT);
+
+    auto rc = packHeader(header, msg->hdr.msgHdr.hdr);
+
+    if (rc != 0)
+    {
+        return rc;
+    }
+
+    msg->hdr.command = static_cast<uint8_t>(
+        NetworkPortCommands::GetEthernetPortTelemetryCounters);
+    msg->hdr.data_size = sizeof(portNumber);
+    msg->portNumber = le16toh(portNumber);
+
+    return 0;
+}
+
+int decodeGetEthernetPortTelemetryCountersResponse(
+    std::span<const uint8_t> buf,
+    ocp::accelerator_management::CompletionCode& cc, uint16_t& reasonCode,
+    std::vector<std::pair<uint8_t, uint64_t>>& telemetryValues)
+{
+    telemetryValues.clear();
+    telemetryValues.reserve(std::numeric_limits<uint8_t>::max());
+
+    const int rc = ocp::accelerator_management::decodeAggregateResponse(
+        buf, cc, reasonCode,
+        [&telemetryValues](const uint8_t tag, const uint8_t length,
+                           const uint8_t* value) -> int {
+            uint64_t telemetryData = 0;
+
+            if (length == sizeof(uint32_t))
+            {
+                uint32_t telemetryValue = 0;
+                std::memcpy(&telemetryValue, value, sizeof(uint32_t));
+
+                telemetryData = le32toh(telemetryValue);
+            }
+            else if (length == sizeof(uint64_t))
+            {
+                uint64_t telemetryValue = 0;
+                std::memcpy(&telemetryValue, value, sizeof(uint64_t));
+
+                telemetryData = le64toh(telemetryValue);
+            }
+            else
+            {
+                return EINVAL;
+            }
+
+            telemetryValues.emplace_back(tag, telemetryData);
+
+            return 0;
+        });
+
+    return rc;
+}
 // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
 } // namespace gpu

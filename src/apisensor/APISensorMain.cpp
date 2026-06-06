@@ -327,6 +327,24 @@ void createSensors(
             // PowerState is optional parameter
             PowerState readPowerState = getPowerState(baseConfigMap);
 
+            // sensornumber is optional parameter
+            uint64_t sensorNumber = defaultSensorNumber;
+            uint8_t lun = defaultLun;
+
+            auto configSensorNum = baseConfigMap.find("SensorNumber");
+            if (configSensorNum != baseConfigMap.end())
+            {
+                sensorNumber = std::visit(VariantToUnsignedIntVisitor(),
+                                          configSensorNum->second);
+            }
+
+            auto configlun = baseConfigMap.find("LUN");
+            if (configlun != baseConfigMap.end())
+            {
+                lun = std::visit(VariantToUnsignedIntVisitor(),
+                                 configlun->second);
+            }
+
             // EntityId, EnityInstance, and EventReadingType
             // are optional numeric parameters used by the IPMI to override
             // their corresponding SDR fields during SDR creation.
@@ -500,7 +518,7 @@ void createSensors(
                         sensorWriteFuncName, sensorInfoFuncName,
                         sensorInfoFuncCallState,
                         sensorLocationIndicatorFuncName, sensorPollTimeMs,
-                        libAPISensorHandle);
+                        libAPISensorHandle, sensorNumber, lun);
 
                     // If sensor library is loaded and we have a valid pointer
                     // to the ReadFunction, then start the sensor monitor loop.
@@ -534,7 +552,7 @@ void createSensors(
                         sensorTypePathOverride, sensorInitFuncName,
                         sensorReadFuncName, sensorWriteFuncName,
                         sensorInfoFuncName, sensorPollTimeMs,
-                        libAPISensorHandle);
+                        libAPISensorHandle, sensorNumber, lun);
 
                     // If sensor library is loaded and we have a valid pointer
                     // to the ReadFunction, then start the sensor monitor loop.

@@ -1,11 +1,14 @@
 #include <ProcessorStatus.hpp>
+#include <Utils.hpp>
 #include <VariantVisitors.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/container/flat_set.hpp>
 #include <sdbusplus/bus/match.hpp>
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -62,56 +65,91 @@ void createSensors(
                 std::string sensorName =
                     std::get<std::string>(findSensorName->second);
 
-                bool dbusFound = false;
-                std::string gpioName;
-                std::string dbusPath;
-                std::string dbusIface;
-                std::string dbusPropName;
-                auto dbusPathFound = baseConfiguration->second.find("DBusPath");
-                if (!(dbusPathFound == baseConfiguration->second.end()))
+                uint16_t sensorNumber = defaultSensorNumber;
+                uint8_t lun = defaultLun;
+                auto findSensorNum =
+                    baseConfiguration->second.find("SensorNumber");
+                if (findSensorNum != baseConfiguration->second.end())
                 {
-                    dbusFound = true;
-                }
-                if (dbusFound)
-                {
-                    dbusPath = std::visit(VariantToStringVisitor(),
-                                          dbusPathFound->second);
-
-                    auto dbusIfaceFound =
-                        baseConfiguration->second.find("DBusIface");
-                    if (dbusIfaceFound == baseConfiguration->second.end())
+                    try
                     {
-                        std::cerr
-                            << "Missing mandatory DBusIface property for: "
-                            << baseConfiguration->first << " object\n";
-                        continue;
+                        sensorNumber = static_cast<uint16_t>(
+                            std::visit(VariantToUnsignedIntVisitor(),
+                                       findSensorNum->second));
                     }
-                    dbusIface = std::visit(VariantToStringVisitor(),
-                                           dbusIfaceFound->second);
-
-                    auto dbusPropNameFound =
-                        baseConfiguration->second.find("DBusProperty");
-                    if (dbusPropNameFound == baseConfiguration->second.end())
+                    catch (const std::exception&)
                     {
-                        std::cerr
-                            << "Missing mandatory DBusProperty property for: "
-                            << baseConfiguration->first << " object\n";
-                        continue;
-                    }
-                    dbusPropName = std::visit(VariantToStringVisitor(),
-                                              dbusPropNameFound->second);
-                }
-                else
-                {
-                    auto findGpioName =
-                        baseConfiguration->second.find("GpioName");
-                    if (findGpioName == baseConfiguration->second.end())
-                    {
-                        std::cerr << "could not determine gpio name"
+                        std::cerr << "Invalid SensorNumber for " << sensorName
                                   << "\n";
-                        continue;
+                        sensorNumber = defaultSensorNumber;
                     }
-                    gpioName = std::get<std::string>(findGpioName->second);
+                }
+
+                auto findLun = baseConfiguration->second.find("LUN");
+                if (findLun != baseConfiguration->second.end())
+                {
+                    try
+                    {
+                        lun = static_cast<uint8_t>(std::visit(
+                            VariantToUnsignedIntVisitor(), findLun->second));
+                    }
+                    catch (const std::exception&)
+                    {
+                        std::cerr << "Invalid LUN for " << sensorName << "\n";
+                    }
+                }
+
+                bool dbusFound = false;
+                bool gpioFound = false;
+                std::vector<std::string> gpioNames;
+                std::vector<std::string> dbusPaths, dbusIfaces, dbusProperties;
+
+                auto findGpioName = baseConfiguration->second.find("GpioName");
+                if (findGpioName != baseConfiguration->second.end())
+                {
+                    std::vector<std::string> gpioList =
+                        std::visit(VariantNamesVisitor(), findGpioName->second);
+                    gpioNames = gpioList;
+                    for (const auto& gpio : gpioList)
+                    {
+                        if (!gpio.empty())
+                        {
+                            gpioFound = true;
+                            break;
+                        }
+                    }
+                }
+
+                auto dbusPathFound = baseConfiguration->second.find("DBusPath");
+                auto dbusIfaceFound =
+                    baseConfiguration->second.find("DBusIface");
+                auto dbusPropNameFound =
+                    baseConfiguration->second.find("DBusProperty");
+
+                if (dbusPathFound != baseConfiguration->second.end() &&
+                    dbusIfaceFound != baseConfiguration->second.end() &&
+                    dbusPropNameFound != baseConfiguration->second.end())
+                {
+                    dbusPaths = std::visit(VariantNamesVisitor(),
+                                           dbusPathFound->second);
+                    dbusIfaces = std::visit(VariantNamesVisitor(),
+                                            dbusIfaceFound->second);
+                    dbusProperties = std::visit(VariantNamesVisitor(),
+                                                dbusPropNameFound->second);
+
+                    for (const auto& path : dbusPaths)
+                    {
+                        if (!path.empty())
+                        {
+                            dbusFound = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!gpioFound && !dbusFound)
+                {
+                    continue;
                 }
                 // on rescans, only update sensors we were signaled by
                 auto findSensor = sensors.find(sensorName);
@@ -136,7 +174,7 @@ void createSensors(
                     }
                 }
                 std::string polarity;
-                if (!dbusFound)
+                if (gpioFound)
                 {
                     auto findPolarity =
                         baseConfiguration->second.find("Polarity");
@@ -153,9 +191,9 @@ void createSensors(
                 sensorConstruct = nullptr;
 
                 sensorConstruct = std::make_shared<ProcessorStatus>(
-                    objectServer, dbusConnection, io, sensorName, gpioName,
-                    *interfacePath, dbusPath, dbusIface, dbusPropName,
-                    dbusFound);
+                    objectServer, dbusConnection, io, sensorName, gpioNames,
+                    *interfacePath, dbusPaths, dbusIfaces, dbusProperties,
+                    dbusFound, sensorNumber, lun);
             }
         });
 
@@ -180,7 +218,7 @@ int main()
         createSensors(io, objectServer, sensors, systemBus, nullptr);
     });
 
-    boost::asio::deadline_timer filterTimer(io);
+    boost::asio::steady_timer filterTimer(io);
     std::function<void(sdbusplus::message::message&)> eventHandler =
         [&](sdbusplus::message::message& message) {
             if (message.is_method_error())
@@ -190,7 +228,7 @@ int main()
             }
             sensorsChanged->insert(message.get_path());
             // this implicitly cancels the timer
-            filterTimer.expires_from_now(boost::posix_time::seconds(1));
+            filterTimer.expires_after(std::chrono::seconds(1));
 
             filterTimer.async_wait([&](const boost::system::error_code& ec) {
                 if (ec == boost::asio::error::operation_aborted)

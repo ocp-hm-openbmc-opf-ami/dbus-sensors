@@ -31,7 +31,8 @@ class BatteryStatus :
                   std::shared_ptr<sdbusplus::asio::connection>& conn,
                   boost::asio::io_context& io, const std::string& sensorName,
                   const std::string& deviceName,
-                  const std::string& sensorConfiguration);
+                  const std::string& sensorConfiguration, uint16_t sensorNumber,
+                  uint8_t lun);
     ~BatteryStatus() override;
     void setupRead(void);
 

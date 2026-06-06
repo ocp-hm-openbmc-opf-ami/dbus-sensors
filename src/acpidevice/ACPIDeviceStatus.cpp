@@ -17,11 +17,13 @@ ACPIDeviceStatus::ACPIDeviceStatus(
     std::shared_ptr<sdbusplus::asio::connection>& conn,
     boost::asio::io_context& io, const std::string& sensorName,
     const std::string& deviceName, std::optional<uint8_t> deviceBus,
-    std::optional<uint8_t> deviceAddress,
+    std::optional<uint8_t> deviceAddress, uint16_t sensorNumber, uint8_t lun,
     const std::string& sensorConfiguration) :
-    Discrete(escapeName(sensorName), sensorConfiguration, conn),
+    Discrete(escapeName(sensorName), sensorConfiguration, conn, sensorNumber,
+             lun),
     objServer(objectServer), waitTimer(io), deviceName(deviceName),
-    deviceBus(deviceBus), deviceAddress(deviceAddress), conn(conn)
+    deviceBus(deviceBus), deviceAddress(deviceAddress),
+    sensorNumber(sensorNumber), lun(lun), conn(conn)
 {
     sensorInterface = objectServer.add_interface(
         "/xyz/openbmc_project/sensors/acpidevice/" + name,
@@ -84,7 +86,7 @@ void ACPIDeviceStatus::psuMonitorState()
         std::cerr << "i2c bus address not configured \n";
         logData[1] = "D3";
         eventData[0] = static_cast<uint8_t>(ACPI::D3);
-        addSelEntry(conn, logData, eventData, true);
+        addSelEntry(conn, logData, eventData, true, sensorNumber);
         updateState(sensorInterface, reading);
         return;
     }
@@ -123,7 +125,7 @@ void ACPIDeviceStatus::psuMonitorState()
                 offsetAndEvent = {static_cast<uint8_t>(ACPI::D0), true};
                 if (assertedEvents.insert(offsetAndEvent).second == true)
                 {
-                    addSelEntry(conn, logData, eventData, true);
+                    addSelEntry(conn, logData, eventData, true, sensorNumber);
                 }
                 offsetAndEvent = {static_cast<uint8_t>(ACPI::D1), true};
                 if (assertedEvents.erase(offsetAndEvent) == 1)
@@ -131,7 +133,7 @@ void ACPIDeviceStatus::psuMonitorState()
                     logData[1] = "D1";
                     logData[3] = "SensorDeviceACPIPowerStateDeassert";
                     eventData[0] = static_cast<uint8_t>(ACPI::D1);
-                    addSelEntry(conn, logData, eventData, false);
+                    addSelEntry(conn, logData, eventData, false, sensorNumber);
                 }
             }
             else if (data == 0)
@@ -142,7 +144,7 @@ void ACPIDeviceStatus::psuMonitorState()
                 offsetAndEvent = {static_cast<uint8_t>(ACPI::D1), true};
                 if (assertedEvents.insert(offsetAndEvent).second == true)
                 {
-                    addSelEntry(conn, logData, eventData, true);
+                    addSelEntry(conn, logData, eventData, true, sensorNumber);
                 }
             }
             else
@@ -153,7 +155,7 @@ void ACPIDeviceStatus::psuMonitorState()
                 offsetAndEvent = {static_cast<uint8_t>(ACPI::D3), true};
                 if (assertedEvents.insert(offsetAndEvent).second == true)
                 {
-                    addSelEntry(conn, logData, eventData, true);
+                    addSelEntry(conn, logData, eventData, true, sensorNumber);
                 }
 
                 offsetAndEvent = {static_cast<uint8_t>(ACPI::D1), true};
@@ -162,7 +164,7 @@ void ACPIDeviceStatus::psuMonitorState()
                     logData[1] = "D1";
                     logData[3] = "SensorDeviceACPIPowerStateDeassert";
                     eventData[0] = static_cast<uint8_t>(ACPI::D1);
-                    addSelEntry(conn, logData, eventData, false);
+                    addSelEntry(conn, logData, eventData, false, sensorNumber);
                 }
             }
         }

@@ -1,11 +1,14 @@
 #include <ACPISystemStatus.hpp>
+#include <Utils.hpp>
 #include <VariantVisitors.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/container/flat_set.hpp>
 #include <sdbusplus/bus/match.hpp>
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -62,6 +65,25 @@ void createSensors(
                 std::string sensorName =
                     std::get<std::string>(findSensorName->second);
 
+                // sensornumber is optional parameter
+                uint16_t sensorNumber = defaultSensorNumber;
+                uint8_t lun = defaultLun;
+
+                auto configSensorNum =
+                    baseConfiguration->second.find("SensorNumber");
+                if (configSensorNum != baseConfiguration->second.end())
+                {
+                    sensorNumber = std::visit(VariantToUnsignedIntVisitor(),
+                                              configSensorNum->second);
+                }
+
+                auto configlun = baseConfiguration->second.find("LUN");
+                if (configlun != baseConfiguration->second.end())
+                {
+                    lun = std::visit(VariantToUnsignedIntVisitor(),
+                                     configlun->second);
+                }
+
                 // on rescans, only update sensors we were signaled by
                 auto findSensor = sensors.find(sensorName);
                 if (!firstScan && findSensor != sensors.end())
@@ -88,7 +110,8 @@ void createSensors(
                 sensorConstruct = nullptr;
 
                 sensorConstruct = std::make_shared<ACPISystemStatus>(
-                    objectServer, dbusConnection, sensorName, *interfacePath);
+                    objectServer, dbusConnection, sensorName, sensorNumber, lun,
+                    *interfacePath);
             }
         });
 
@@ -113,7 +136,7 @@ int main()
         createSensors(io, objectServer, sensors, systemBus, nullptr);
     });
 
-    boost::asio::deadline_timer filterTimer(io);
+    boost::asio::steady_timer filterTimer(io);
     std::function<void(sdbusplus::message::message&)> eventHandler =
         [&](sdbusplus::message::message& message) {
             if (message.is_method_error())
@@ -123,7 +146,7 @@ int main()
             }
             sensorsChanged->insert(message.get_path());
             // this implicitly cancels the timer
-            filterTimer.expires_from_now(boost::posix_time::seconds(1));
+            filterTimer.expires_after(std::chrono::seconds(1));
             filterTimer.async_wait([&](const boost::system::error_code& ec) {
                 if (ec == boost::asio::error::operation_aborted)
                 {

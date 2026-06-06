@@ -93,7 +93,11 @@ void DigitalDiscrete::monitorState(void)
             logData.push_back(baseObj + name);
             logData.push_back("DigitalState");
 
-            addSelEntry(dbusConnection, logData, eventData, assertion);
+            AdditionalData addData;
+            addData["SENSOR_PATH"] = baseObj + name;
+
+            addSelEntry(dbusConnection, logData, eventData, assertion,
+                        sensorNumber, addData);
         }
     };
 

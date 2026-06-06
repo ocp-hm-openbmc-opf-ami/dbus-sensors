@@ -9,14 +9,16 @@
 #include <string>
 #include <vector>
 
-PowerUnit::PowerUnit(sdbusplus::asio::object_server& objectServer,
-                     std::shared_ptr<sdbusplus::asio::connection>& conn,
-                     boost::asio::io_context& io __attribute__((unused)),
-                     const std::string& sensorName,
-                     const std::string& sensorConfiguration,
-                     std::optional<uint8_t> sensorSDRType) :
-    Discrete(escapeName(sensorName), sensorConfiguration, conn),
+PowerUnit::PowerUnit(
+    sdbusplus::asio::object_server& objectServer,
+    std::shared_ptr<sdbusplus::asio::connection>& conn,
+    boost::asio::io_context& io __attribute__((unused)),
+    const std::string& sensorName, const std::string& sensorConfiguration,
+    std::optional<uint8_t> sensorSDRType, uint16_t sensorNumber, uint8_t lun) :
+    Discrete(escapeName(sensorName), sensorConfiguration, conn, sensorNumber,
+             lun),
     objServer(objectServer)
+
 {
     if (sensorSDRType.has_value() && sensorSDRType.value() == EVENT_SDR_TYPE)
     {
@@ -34,8 +36,8 @@ PowerUnit::PowerUnit(sdbusplus::asio::object_server& objectServer,
     setInitialProperties();
 
     // write sensor specific code
-    auto powerStatusMatcherCallback = [this, &conn](sdbusplus::message_t& msg) {
-        std::cerr << "power state changed\n";
+    auto powerStatusMatcherCallback = [this, &conn, sensorNumber](
+                                          sdbusplus::message_t& msg) {
         std::string objectName;
         boost::container::flat_map<std::string, std::variant<std::string>>
             values;
@@ -44,31 +46,47 @@ PowerUnit::PowerUnit(sdbusplus::asio::object_server& objectServer,
         bool assertion = false;
 
         msg.read(objectName, values);
-        auto findState = values.find(powerProperty);
-        if (findState != values.end())
+        auto findState = values.find(hostProperty);
+        auto powerState = values.find(chassisProperty);
+        if (powerState != values.end())
         {
-            if (std::get<std::string>(findState->second) ==
-                "xyz.openbmc_project.State.Host.HostState.Off")
+            std::string transitions = std::get<std::string>(powerState->second);
+            if (transitions ==
+                "xyz.openbmc_project.State.Chassis.PowerState.Off")
             {
-                updateState(sensorInterface, 0x01);
+                updateState(sensorInterface,
+                            (static_cast<uint8_t>(PowerUnitEvent::powerDown)));
                 assertion = true;
+                std::vector<std::string> logData{name, "Power Down",
+                                                 baseObj + name,
+                                                 "SensorDevicePowerUnitAssert"};
+                eventData[0] = 0x00;
+                addSelEntry(conn, logData, eventData, assertion, sensorNumber);
             }
-            else
+        }
+        else if (findState != values.end())
+        {
+            std::string transition = std::get<std::string>(findState->second);
+            if (transition ==
+                "xyz.openbmc_project.State.Host.Transition.Reboot")
             {
-                updateState(sensorInterface, 0x00);
-                assertion = false;
+                updateState(sensorInterface,
+                            (static_cast<uint8_t>(PowerUnitEvent::powerCycle)));
+                assertion = true;
+
+                std::vector<std::string> logData{name, "Power Cycle",
+                                                 baseObj + name,
+                                                 "SensorDevicePowerUnitAssert"};
+
+                eventData[0] = 0x01;
+                addSelEntry(conn, logData, eventData, assertion, sensorNumber);
             }
-
-            std::vector<std::string> logData{name, "Power Down", baseObj + name,
-                                             "PowerUnit"};
-            eventData[0] = static_cast<uint8_t>(0x00);
-
-            addSelEntry(conn, logData, eventData, assertion);
         }
     };
-
-    powerMonitor =
-        setupDbusMatch(powerPath, powerInterface, powerStatusMatcherCallback);
+    powerCycleMonitor =
+        setupDbusMatch(hostPath, hostInterface, powerStatusMatcherCallback);
+    powerOffMonitor = setupDbusMatch(chassisPath, chassisInterface,
+                                     powerStatusMatcherCallback);
 }
 
 PowerUnit::~PowerUnit()

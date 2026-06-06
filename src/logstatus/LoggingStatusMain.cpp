@@ -3,9 +3,11 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/container/flat_set.hpp>
 #include <sdbusplus/bus/match.hpp>
 
+#include <chrono>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -63,6 +65,34 @@ void createSensors(
                 std::string sensorName =
                     std::get<std::string>(findSensorName->second);
 
+                auto findSensorNumber =
+                    baseConfiguration->second.find("SensorNumber");
+                uint16_t sensorNumber = defaultSensorNumber;
+                if (findSensorNumber == baseConfiguration->second.end())
+                {
+                    std::cerr << "could not determine configuration Sensor "
+                                 "Number"
+                              << "\n";
+                }
+                else
+                {
+                    sensorNumber = std::visit(VariantToUnsignedIntVisitor(),
+                                              findSensorNumber->second);
+                }
+
+                auto findLUN = baseConfiguration->second.find("LUN");
+                uint8_t lun = defaultLun;
+                if (findLUN == baseConfiguration->second.end())
+                {
+                    std::cerr << "could not determine configuration LUN"
+                              << "\n";
+                }
+                else
+                {
+                    lun = std::visit(VariantToUnsignedIntVisitor(),
+                                     findLUN->second);
+                }
+
                 auto findSensorlimit = baseConfiguration->second.find("Limit");
                 if (findSensorlimit == baseConfiguration->second.end())
                 {
@@ -103,7 +133,7 @@ void createSensors(
 
                 sensorConstruct = std::make_shared<EventStatus>(
                     objectServer, dbusConnection, sensorName, *interfacePath,
-                    limit); //, limit);
+                    limit, sensorNumber, lun);
             }
         });
 
@@ -160,7 +190,7 @@ int main()
         createSensors(io, objectServer, sensors, systemBus, nullptr);
     });
 
-    boost::asio::deadline_timer filterTimer(io);
+    boost::asio::steady_timer filterTimer(io);
     std::function<void(sdbusplus::message::message&)> eventHandler =
         [&](sdbusplus::message::message& message) {
             if (message.is_method_error())
@@ -170,7 +200,7 @@ int main()
             }
             sensorsChanged->insert(message.get_path());
             // this implicitly cancels the timer
-            filterTimer.expires_from_now(boost::posix_time::seconds(1));
+            filterTimer.expires_after(std::chrono::seconds(1));
 
             filterTimer.async_wait([&](const boost::system::error_code& ec) {
                 if (ec == boost::asio::error::operation_aborted)

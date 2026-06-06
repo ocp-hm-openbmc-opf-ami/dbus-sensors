@@ -16,6 +16,8 @@
 
 #include "IntelCPUSensor.hpp"
 
+#include "IntelCPUSensorInfo.hpp"
+#include "SensorInfo.hpp"
 #include "SensorPaths.hpp"
 #include "Thresholds.hpp"
 #include "Utils.hpp"
@@ -55,10 +57,25 @@ IntelCPUSensor::IntelCPUSensor(
     std::vector<thresholds::Threshold>&& thresholdsIn,
     const std::string& sensorConfiguration, int cpuId, bool show,
     double dtsOffset, const SensorProperties& sensorProperties) :
-    Sensor(escapeName(sensorName), std::move(thresholdsIn), sensorConfiguration,
-           objectType, false, false, sensorProperties.max, sensorProperties.min,
-           conn, PowerState::on),
-    objServer(objectServer), inputDev(io),
+    Sensor(
+        escapeName(sensorName), std::move(thresholdsIn), sensorConfiguration,
+        objectType, false, false, sensorProperties.max, sensorProperties.min,
+        conn, PowerState::on,
+        [&sensorName]() -> uint16_t {
+            const int idx = findsensoridx(
+                sensor_paths::escapePathForDbus(escapeName(sensorName)));
+            if (idx >= 0 && idx < static_cast<int>(Sensor_Info.size()))
+                return static_cast<uint16_t>(Sensor_Info[idx].SensorNumber);
+            return defaultSensorNumber;
+        }(),
+        [&sensorName]() -> uint8_t {
+            const int idx = findsensoridx(
+                sensor_paths::escapePathForDbus(escapeName(sensorName)));
+            if (idx >= 0 && idx < static_cast<int>(Sensor_Info.size()))
+                return static_cast<uint8_t>(Sensor_Info[idx].Lun);
+            return defaultLun;
+        }()),
+    objServer(objectServer), inputDev(io), waitTimer(io),
     nameTcontrol("Tcontrol CPU" + std::to_string(cpuId)), path(path),
     privTcontrol(std::numeric_limits<double>::quiet_NaN()),
     dtsOffset(dtsOffset), show(show), scaleFactor(sensorProperties.scaleFactor)
@@ -77,6 +94,7 @@ IntelCPUSensor::IntelCPUSensor(
         }
         association =
             objectServer.add_interface(interfacePath, association::interface);
+
         setInitialProperties(sensorProperties.units);
     }
     // call setup always as not all sensors call setInitialProperties
@@ -92,9 +110,24 @@ IntelCPUSensor::IntelCPUSensor(
     boost::asio::io_context& io, const std::string& sensorName,
     std::vector<thresholds::Threshold>&& thresholdsIn,
     const std::string& sensorConfiguration) :
-    Sensor(escapeName(sensorName), std::move(thresholdsIn), sensorConfiguration,
-           objectType, false, false, 0, 0, conn, PowerState::on),
-    objServer(objectServer), inputDev(io),
+    Sensor(
+        escapeName(sensorName), std::move(thresholdsIn), sensorConfiguration,
+        objectType, false, false, 0, 0, conn, PowerState::on,
+        [&sensorName]() -> uint16_t {
+            const int idx = findsensoridx(
+                sensor_paths::escapePathForDbus(escapeName(sensorName)));
+            if (idx >= 0 && idx < static_cast<int>(Sensor_Info.size()))
+                return static_cast<uint16_t>(Sensor_Info[idx].SensorNumber);
+            return defaultSensorNumber;
+        }(),
+        [&sensorName]() -> uint8_t {
+            const int idx = findsensoridx(
+                sensor_paths::escapePathForDbus(escapeName(sensorName)));
+            if (idx >= 0 && idx < static_cast<int>(Sensor_Info.size()))
+                return static_cast<uint8_t>(Sensor_Info[idx].Lun);
+            return defaultLun;
+        }()),
+    objServer(objectServer), inputDev(io), waitTimer(io),
     privTcontrol(std::numeric_limits<double>::quiet_NaN()), dtsOffset(0),
     show(true), minMaxReadCounter(0)
 {
@@ -111,10 +144,13 @@ IntelCPUSensor::IntelCPUSensor(
     sensorInterface->register_property("Unit", units);
     sensorInterface->register_property("MaxValue", maxValue);
     sensorInterface->register_property("MinValue", minValue);
+    sensorInterface->register_property("SensorNumber", sensorNumber);
+    sensorInterface->register_property("LUN", lun);
     sensorInterface->register_property(
         "Value", value, [&](const double& newValue, double& oldValue) {
             return setSensorValue(newValue, oldValue);
         });
+
     if (!sensorInterface->initialize())
     {
         std::cerr << "error initializing value interface\n";
@@ -158,6 +194,7 @@ IntelCPUSensor::~IntelCPUSensor()
     try
     {
         inputDev.close();
+        waitTimer.cancel();
     }
     catch (...)
     {
@@ -238,17 +275,32 @@ IntelCPUSensor::~IntelCPUSensor()
     }
 }
 
-void IntelCPUSensor::setupRead(boost::asio::yield_context yield)
+void IntelCPUSensor::restartRead()
+{
+    std::weak_ptr<IntelCPUSensor> weakRef = weak_from_this();
+    waitTimer.expires_after(std::chrono::milliseconds(pollTime));
+    waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
+        if (ec == boost::asio::error::operation_aborted)
+        {
+            lg2::error("Failed to reschedule");
+            return;
+        }
+        std::shared_ptr<IntelCPUSensor> self = weakRef.lock();
+
+        if (self)
+        {
+            self->setupRead();
+        }
+    });
+}
+
+void IntelCPUSensor::setupRead()
 {
     if (readingStateGood())
     {
         inputDev.close();
 
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-        if (path.empty())
-        {
-            return;
-        }
         fd = open(path.c_str(), O_RDONLY | O_NONBLOCK);
         if (fd < 0)
         {
@@ -261,19 +313,29 @@ void IntelCPUSensor::setupRead(boost::asio::yield_context yield)
     else
     {
         markAvailable(false);
-        updateValue(std::numeric_limits<double>::quiet_NaN());
+        if (show)
+        {
+            updateValue(std::numeric_limits<double>::quiet_NaN());
+        }
+        else
+        {
+            value = std::numeric_limits<double>::quiet_NaN();
+        }
+        restartRead();
         return;
     }
 
     std::weak_ptr<IntelCPUSensor> weakRef = weak_from_this();
-    boost::system::error_code ec;
     inputDev.async_wait(boost::asio::posix::descriptor_base::wait_read,
-                        yield[ec]);
-    std::shared_ptr<IntelCPUSensor> self = weakRef.lock();
-    if (self)
-    {
-        self->handleResponse(ec);
-    }
+                        [weakRef](const boost::system::error_code& ec) {
+                            std::shared_ptr<IntelCPUSensor> self =
+                                weakRef.lock();
+
+                            if (self)
+                            {
+                                self->handleResponse(ec);
+                            }
+                        });
 }
 
 void IntelCPUSensor::updateMinMaxValues()
@@ -346,15 +408,19 @@ void IntelCPUSensor::handleResponse(const boost::system::error_code& err)
                 lg2::error("'{NAME}' interface down!", "NAME", name);
                 loggedInterfaceDown = true;
             }
+            pollTime = static_cast<size_t>(IntelCPUSensor::sensorPollMs) * 10U;
             markFunctional(false);
         }
+        restartRead();
         return;
     }
     loggedInterfaceDown = false;
 
     if (err)
     {
+        pollTime = sensorFailedPollTimeMs;
         incrementError();
+        restartRead();
         return;
     }
 
@@ -440,6 +506,7 @@ void IntelCPUSensor::handleResponse(const boost::system::error_code& err)
     {
         incrementError();
     }
+    restartRead();
 }
 
 void IntelCPUSensor::checkThresholds()

@@ -3,7 +3,7 @@
 #include "Thresholds.hpp"
 #include "sensor.hpp"
 
-#include <boost/asio/deadline_timer.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <gpiod.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
@@ -202,7 +202,8 @@ class DBusADCSensor :
         const double Vref, const unsigned ResolutionBits,
         const double ScaleFactor, const float PollRate, PowerState ReadState,
         const std::string& SensorConfiguration,
-        std::optional<BridgeGpio>&& BridgeGpio);
+        std::optional<BridgeGpio>&& BridgeGpio, uint16_t SensorNumber,
+        uint8_t Lun);
     ~DBusADCSensor() override;
     void read();
     void setupRead();
@@ -210,7 +211,7 @@ class DBusADCSensor :
   private:
     sdbusplus::asio::object_server& objServer;
     std::shared_ptr<sdbusplus::asio::connection> dbusConn;
-    boost::asio::deadline_timer waitTimer;
+    boost::asio::steady_timer waitTimer;
     const std::string dbusAdcService;
     const std::string dbusAdcObjPath;
     const std::string dbusAdcIface;

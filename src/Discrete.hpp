@@ -48,9 +48,12 @@ enum class HostState
 struct Discrete
 {
     Discrete(const std::string& name, const std::string& configurationPath,
-             std::shared_ptr<sdbusplus::asio::connection>& conn) :
+             std::shared_ptr<sdbusplus::asio::connection>& conn,
+             uint16_t sensorNumber = defaultSensorNumber,
+             uint8_t lun = defaultLun) :
         name(sensor_paths::escapePathForDbus(name)),
-        configurationPath(configurationPath), dbusConnection(conn)
+        configurationPath(configurationPath), dbusConnection(conn),
+        sensorNumber(sensorNumber), lun(lun)
 
     {}
     virtual ~Discrete() = default;
@@ -63,6 +66,8 @@ struct Discrete
     uint16_t state = 0;
 
     std::shared_ptr<sdbusplus::asio::connection> dbusConnection;
+    uint16_t sensorNumber;
+    uint8_t lun;
 #ifdef FEATURE_APISENSOR_SUPPORT
     bool internalSet = false;
     // This member variable provides a hook that can be used to receive
@@ -109,6 +114,8 @@ struct Discrete
     {
         createAssociation(association, configurationPath);
 
+        sensorInterface->register_property("SensorNumber", sensorNumber);
+        sensorInterface->register_property("LUN", lun);
         sensorInterface->register_property(
             "State", state,
             [this](const uint16_t& newState, uint16_t& oldState) {

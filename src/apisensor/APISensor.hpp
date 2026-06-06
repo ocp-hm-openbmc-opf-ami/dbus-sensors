@@ -6,7 +6,6 @@
 #include <Discrete.hpp>
 #include <Utils.hpp>
 #include <boost/asio/deadline_timer.hpp>
-#include <boost/asio/io_service.hpp>
 #include <boost/container/flat_map.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 
@@ -46,23 +45,23 @@ struct SetSensorInternalFailure : sdbusplus::exception_t
 class APISensor : public Sensor, public std::enable_shared_from_this<APISensor>
 {
   public:
-    APISensor(const std::string& objectType,
-              sdbusplus::asio::object_server& objectServer,
-              boost::asio::io_context& io,
-              std::shared_ptr<sdbusplus::asio::connection>& conn,
-              const std::string& sensorName, const std::string& sensorUnits,
-              std::vector<thresholds::Threshold>&& thresholdsIn,
-              const std::string& sensorConfiguration, double maxReading,
-              double minReading, const PowerState& powerState,
-              double sensorScale, const double sensorEventReadingType,
-              const double sensorTypeCode, const double sensorEntityId,
-              const double sensorEntityInstance,
-              const std::string& sensorTypePathOverride,
-              const std::string& sensorInitFuncName,
-              const std::string& sensorReadFuncName,
-              const std::string& sensorWriteFuncName,
-              const std::string& sensorInfoFuncName,
-              unsigned long sensorPollTimeMs, void* libHandle);
+    APISensor(
+        const std::string& objectType,
+        sdbusplus::asio::object_server& objectServer,
+        boost::asio::io_context& io,
+        std::shared_ptr<sdbusplus::asio::connection>& conn,
+        const std::string& sensorName, const std::string& sensorUnits,
+        std::vector<thresholds::Threshold>&& thresholdsIn,
+        const std::string& sensorConfiguration, double maxReading,
+        double minReading, const PowerState& powerState, double sensorScale,
+        const double sensorEventReadingType, const double sensorTypeCode,
+        const double sensorEntityId, const double sensorEntityInstance,
+        const std::string& sensorTypePathOverride,
+        const std::string& sensorInitFuncName,
+        const std::string& sensorReadFuncName,
+        const std::string& sensorWriteFuncName,
+        const std::string& sensorInfoFuncName, unsigned long sensorPollTimeMs,
+        void* libHandle, uint16_t sensorNumber, uint8_t lun);
     ~APISensor() override;
 
     // Call this immediately after calling the constructor
@@ -149,7 +148,8 @@ class APISensorDiscrete :
         const std::string& sensorInfoFuncName,
         const std::string& sensorInfoFuncCallState,
         const std::string& sensorLocationIndicatorFuncName,
-        unsigned long sensorPollTimeMs, void* libHandle);
+        unsigned long sensorPollTimeMs, void* libHandle, uint16_t sensorNumber,
+        uint8_t lun);
 
     ~APISensorDiscrete() override;
 

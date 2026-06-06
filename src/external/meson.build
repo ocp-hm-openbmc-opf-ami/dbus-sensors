@@ -1,5 +1,6 @@
-src_inc = include_directories('..')
-
+if not get_option('external').allowed()
+    subdir_done()
+endif
 executable(
     'externalsensor',
     'ExternalSensor.cpp',

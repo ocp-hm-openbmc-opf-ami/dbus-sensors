@@ -33,7 +33,6 @@
 #include <charconv>
 #include <chrono>
 #include <cstddef>
-#include <iostream>
 #include <limits>
 #include <memory>
 #include <string>
@@ -58,11 +57,12 @@ HwmonTempSensor::HwmonTempSensor(
     std::vector<thresholds::Threshold>&& thresholdsIn,
     const struct SensorParams& thisSensorParameters, const float pollRate,
     const std::string& sensorConfiguration, const PowerState powerState,
-    const std::shared_ptr<I2CDevice>& i2cDevice) :
+    const std::shared_ptr<I2CDevice>& i2cDevice, uint16_t sensorNumber,
+    uint8_t lun) :
     Sensor(boost::replace_all_copy(sensorName, " ", "_"),
            std::move(thresholdsIn), sensorConfiguration, objectType, false,
            false, thisSensorParameters.maxValue, thisSensorParameters.minValue,
-           conn, powerState),
+           conn, powerState, sensorNumber, lun),
     i2cDevice(i2cDevice), objServer(objectServer),
     inputDev(io, path, boost::asio::random_access_file::read_only),
     waitTimer(io), path(path), offsetValue(thisSensorParameters.offsetValue),

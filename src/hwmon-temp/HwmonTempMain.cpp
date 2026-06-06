@@ -66,11 +66,13 @@ static constexpr double minValueTemperature = -128;     // DegreesC
 
 static const I2CDeviceTypeMap sensorTypes{
     {"ADM1021", I2CDeviceType{"adm1021", true}},
+    {"BME280", I2CDeviceType{"bme280", false}},
     {"DPS310", I2CDeviceType{"dps310", false}},
     {"EMC1403", I2CDeviceType{"emc1403", true}},
     {"EMC1412", I2CDeviceType{"emc1412", true}},
     {"EMC1413", I2CDeviceType{"emc1413", true}},
     {"EMC1414", I2CDeviceType{"emc1414", true}},
+    {"G751", I2CDeviceType{"g751", true}},
     {"HDC1080", I2CDeviceType{"hdc1080", false}},
     {"JC42", I2CDeviceType{"jc42", true}},
     {"LM75A", I2CDeviceType{"lm75a", true}},
@@ -269,6 +271,57 @@ static SensorConfigMap buildSensorConfigMap(
     return configMap;
 }
 
+static std::pair<uint16_t, uint8_t> getSensorNumberAndLun(
+    const SensorBaseConfigMap& baseConfigMap,
+    const std::optional<size_t>& sensorNameIndex)
+{
+    uint16_t sensorNumber = defaultSensorNumber;
+    uint8_t lun = defaultLun;
+    bool foundSensorNumber = false;
+    bool foundLun = false;
+
+    if (sensorNameIndex)
+    {
+        const std::string suffix = std::to_string(*sensorNameIndex);
+        auto findSensorNum = baseConfigMap.find("SensorNumber" + suffix);
+        if (findSensorNum != baseConfigMap.end())
+        {
+            sensorNumber = static_cast<uint16_t>(std::visit(
+                VariantToUnsignedIntVisitor(), findSensorNum->second));
+            foundSensorNumber = true;
+        }
+
+        auto findLun = baseConfigMap.find("LUN" + suffix);
+        if (findLun != baseConfigMap.end())
+        {
+            lun = static_cast<uint8_t>(
+                std::visit(VariantToUnsignedIntVisitor(), findLun->second));
+            foundLun = true;
+        }
+    }
+
+    if (!foundSensorNumber)
+    {
+        auto findSensorNum = baseConfigMap.find("SensorNumber");
+        if (findSensorNum != baseConfigMap.end())
+        {
+            sensorNumber = static_cast<uint16_t>(std::visit(
+                VariantToUnsignedIntVisitor(), findSensorNum->second));
+        }
+    }
+    if (!foundLun)
+    {
+        auto findLun = baseConfigMap.find("LUN");
+        if (findLun != baseConfigMap.end())
+        {
+            lun = static_cast<uint8_t>(
+                std::visit(VariantToUnsignedIntVisitor(), findLun->second));
+        }
+    }
+
+    return {sensorNumber, lun};
+}
+
 void createSensors(
     boost::asio::io_context& io, sdbusplus::asio::object_server& objectServer,
     boost::container::flat_map<std::string, std::shared_ptr<HwmonTempSensor>>&
@@ -385,11 +438,13 @@ void createSensors(
                     findSensorCfg->second.name;
 
                 // Temperature has "Name", pressure has "Name1"
+                std::optional<size_t> sensorNameIndex;
                 auto findSensorName = baseConfigMap.find("Name");
                 int index = 1;
                 if (thisSensorParameters.typeName == "pressure" ||
                     thisSensorParameters.typeName == "humidity")
                 {
+                    sensorNameIndex = 1;
                     findSensorName = baseConfigMap.find("Name1");
                     index = 2;
                 }
@@ -458,11 +513,17 @@ void createSensors(
                     }
                     else
                     {
+                        // Resolve per-channel keys first (e.g. SensorNumber1,
+                        // LUN1), then fall back to base SensorNumber/LUN.
+                        auto [sensorNumber, lun] = getSensorNumberAndLun(
+                            baseConfigMap, sensorNameIndex);
+
                         sensor = std::make_shared<HwmonTempSensor>(
                             *hwmonFile, sensorType, objectServer,
                             dbusConnection, io, sensorName,
                             std::move(sensorThresholds), thisSensorParameters,
-                            pollRate, interfacePath, readState, i2cDev);
+                            pollRate, interfacePath, readState, i2cDev,
+                            sensorNumber, lun);
                         sensor->setupRead();
                     }
                 }
@@ -520,11 +581,17 @@ void createSensors(
                         }
                         else
                         {
+                            // For Name1/Name2/... resolve SensorNumberX/LUNX,
+                            // then fall back to base SensorNumber/LUN.
+                            auto [sensorNumber, lun] =
+                                getSensorNumberAndLun(baseConfigMap, i);
+
                             sensor = std::make_shared<HwmonTempSensor>(
                                 *hwmonFile, sensorType, objectServer,
                                 dbusConnection, io, sensorName,
                                 std::move(thresholds), thisSensorParameters,
-                                pollRate, interfacePath, readState, i2cDev);
+                                pollRate, interfacePath, readState, i2cDev,
+                                sensorNumber, lun);
                             sensor->setupRead();
                         }
                     }
@@ -539,7 +606,8 @@ void createSensors(
                 }
             }
         });
-    std::vector<std::string> types(sensorTypes.size());
+    std::vector<std::string> types;
+    types.reserve(sensorTypes.size());
     for (const auto& [type, dt] : sensorTypes)
     {
         types.push_back(type);
@@ -552,18 +620,12 @@ void interfaceRemoved(
     boost::container::flat_map<std::string, std::shared_ptr<HwmonTempSensor>>&
         sensors)
 {
-    if (message.is_method_error())
-    {
-        lg2::error("interfacesRemoved callback method error");
-        return;
-    }
-
     sdbusplus::message::object_path path;
     std::vector<std::string> interfaces;
 
     message.read(path, interfaces);
 
-    // If the xyz.openbmc_project.Confguration.X interface was removed
+    // If the xyz.openbmc_project.Configuration.X interface was removed
     // for one or more sensors, delete those sensor objects.
     auto sensorIt = sensors.begin();
     while (sensorIt != sensors.end())
@@ -630,11 +692,6 @@ int main()
     boost::asio::steady_timer filterTimer(io);
     std::function<void(sdbusplus::message_t&)> eventHandler =
         [&](sdbusplus::message_t& message) {
-            if (message.is_method_error())
-            {
-                lg2::error("callback method error");
-                return;
-            }
             sensorsChanged->insert(message.get_path());
             // this implicitly cancels the timer
             filterTimer.expires_after(std::chrono::seconds(1));

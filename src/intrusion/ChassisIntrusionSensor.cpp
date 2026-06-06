@@ -105,7 +105,7 @@ void ChassisIntrusionSensor::updateValue(const size_t& value)
         }
     }
 
-    // Flush the rearm flag everytime it allows an update to Dbus
+    // Flush the rearm flag every time it allows an update to Dbus
     mRearmFlag = false;
 
     // indicate that it is internal set call
@@ -142,7 +142,7 @@ void ChassisIntrusionPchSensor::pollSensorStatus()
 {
     std::weak_ptr<ChassisIntrusionPchSensor> weakRef = weak_from_this();
 
-    // setting a new experation implicitly cancels any pending async wait
+    // setting a new expiration implicitly cancels any pending async wait
     mPollTimer.expires_after(std::chrono::seconds(intrusionSensorPollSec));
 
     mPollTimer.async_wait([weakRef](const boost::system::error_code& ec) {
@@ -251,7 +251,7 @@ void ChassisIntrusionHwmonSensor::pollSensorStatus()
 {
     std::weak_ptr<ChassisIntrusionHwmonSensor> weakRef = weak_from_this();
 
-    // setting a new experation implicitly cancels any pending async wait
+    // setting a new expiration implicitly cancels any pending async wait
     mPollTimer.expires_after(std::chrono::seconds(intrusionSensorPollSec));
 
     mPollTimer.async_wait([weakRef](const boost::system::error_code& ec) {
@@ -379,17 +379,23 @@ void ChassisIntrusionSensor::start()
 }
 
 ChassisIntrusionSensor::ChassisIntrusionSensor(
-    bool autoRearm, sdbusplus::asio::object_server& objServer) :
-    mValue(normalValStr), mAutoRearm(autoRearm), mObjServer(objServer)
+    bool autoRearm, sdbusplus::asio::object_server& objServer,
+    uint16_t sensorNumber, uint8_t lun) :
+    mValue(normalValStr), mAutoRearm(autoRearm), mObjServer(objServer),
+    mSensorNumber(sensorNumber), mLun(lun)
 {
     mIface = mObjServer.add_interface("/xyz/openbmc_project/Chassis/Intrusion",
                                       "xyz.openbmc_project.Chassis.Intrusion");
+    mIface->register_property("SensorNumber", mSensorNumber);
+    mIface->register_property("LUN", mLun);
 }
 
 ChassisIntrusionPchSensor::ChassisIntrusionPchSensor(
     bool autoRearm, boost::asio::io_context& io,
-    sdbusplus::asio::object_server& objServer, int busId, int slaveAddr) :
-    ChassisIntrusionSensor(autoRearm, objServer), mPollTimer(io)
+    sdbusplus::asio::object_server& objServer, int busId, int slaveAddr,
+    uint16_t sensorNumber, uint8_t lun) :
+    ChassisIntrusionSensor(autoRearm, objServer, sensorNumber, lun),
+    mPollTimer(io)
 {
     if (busId < 0 || slaveAddr <= 0)
     {
@@ -431,9 +437,10 @@ ChassisIntrusionPchSensor::ChassisIntrusionPchSensor(
 
 ChassisIntrusionGpioSensor::ChassisIntrusionGpioSensor(
     bool autoRearm, boost::asio::io_context& io,
-    sdbusplus::asio::object_server& objServer, bool gpioInverted) :
-    ChassisIntrusionSensor(autoRearm, objServer), mGpioInverted(gpioInverted),
-    mGpioFd(io)
+    sdbusplus::asio::object_server& objServer, bool gpioInverted,
+    uint16_t sensorNumber, uint8_t lun) :
+    ChassisIntrusionSensor(autoRearm, objServer, sensorNumber, lun),
+    mGpioInverted(gpioInverted), mGpioFd(io)
 {
     mGpioLine = gpiod::find_line(mPinName);
     if (!mGpioLine)
@@ -456,8 +463,9 @@ ChassisIntrusionGpioSensor::ChassisIntrusionGpioSensor(
 
 ChassisIntrusionHwmonSensor::ChassisIntrusionHwmonSensor(
     bool autoRearm, boost::asio::io_context& io,
-    sdbusplus::asio::object_server& objServer, std::string hwmonName) :
-    ChassisIntrusionSensor(autoRearm, objServer),
+    sdbusplus::asio::object_server& objServer, std::string hwmonName,
+    uint16_t sensorNumber, uint8_t lun) :
+    ChassisIntrusionSensor(autoRearm, objServer, sensorNumber, lun),
     mHwmonName(std::move(hwmonName)), mPollTimer(io)
 {
     std::vector<std::filesystem::path> paths;

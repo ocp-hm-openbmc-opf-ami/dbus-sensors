@@ -1,4 +1,7 @@
-gtest_dep = dependency('gtest', main: true, disabler: true, required: false)
+if not get_option('tests').allowed()
+    subdir_done()
+endif
+
 gmock_dep = dependency('gmock', disabler: true, required: false)
 if not gtest_dep.found() or not gmock_dep.found()
     gtest_proj = import('cmake').subproject('googletest', required: false)
@@ -22,7 +25,6 @@ endif
 ut_deps_list = [gtest_dep]
 
 ut_deps_list += default_deps
-src_inc = include_directories('..')
 
 test(
     'test_utils',
@@ -83,7 +85,7 @@ test(
         'test_NvidiaGpuSensorTest.cpp',
         'test_NvidiaDeviceInventoryMctpVdm.cpp',
         gpusensor_sources,
-        dependencies: [gmock_dep, ut_deps_list, utils_dep],
+        dependencies: [gmock_dep, ut_deps_list, utils_dep, mctpasio_dep],
         link_with: [thresholds_a],
         implicit_include_directories: false,
         include_directories: '../nvidia-gpu',

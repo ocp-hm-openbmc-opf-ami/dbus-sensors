@@ -74,7 +74,8 @@ class TachSensor :
                const std::string& sensorConfiguration,
                const std::pair<double, double>& limits,
                const PowerState& powerState,
-               const std::optional<std::string>& led);
+               const std::optional<std::string>& led, uint16_t sensorNumber,
+               uint8_t lun);
     ~TachSensor() override;
     void setupRead();
 
@@ -92,7 +93,9 @@ class TachSensor :
     std::string path;
     std::optional<std::string> led;
     bool ledState = false;
+    bool connectedState = true;
 
+    void signalConnectedStatus(bool connected);
     void handleResponse(const boost::system::error_code& err, size_t bytesRead);
     void restartRead(size_t pollTime);
     void checkThresholds() override;

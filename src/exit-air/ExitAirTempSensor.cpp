@@ -62,8 +62,6 @@ constexpr const char* settingsDaemon = "xyz.openbmc_project.Settings";
 constexpr const char* cfmSettingPath = "/xyz/openbmc_project/control/cfm_limit";
 constexpr const char* cfmSettingIface = "xyz.openbmc_project.Control.CFMLimit";
 
-static constexpr bool debug = false;
-
 static constexpr double cfmMaxReading = 255;
 static constexpr double cfmMinReading = 0;
 
@@ -113,10 +111,6 @@ static void setupSensorMatch(
 static void setMaxPWM(const std::shared_ptr<sdbusplus::asio::connection>& conn,
                       double value)
 {
-    using GetSubTreeType = std::vector<std::pair<
-        std::string,
-        std::vector<std::pair<std::string, std::vector<std::string>>>>>;
-
     conn->async_method_call(
         [conn,
          value](const boost::system::error_code ec, const GetSubTreeType& ret) {
@@ -173,10 +167,11 @@ CFMSensor::CFMSensor(std::shared_ptr<sdbusplus::asio::connection>& conn,
                      const std::string& sensorConfiguration,
                      sdbusplus::asio::object_server& objectServer,
                      std::vector<thresholds::Threshold>&& thresholdData,
-                     std::shared_ptr<ExitAirTempSensor>& parent) :
+                     std::shared_ptr<ExitAirTempSensor>& parent,
+                     uint16_t sensorNumber, uint8_t lun) :
     Sensor(escapeName(sensorName), std::move(thresholdData),
            sensorConfiguration, "CFMSensor", false, false, cfmMaxReading,
-           cfmMinReading, conn, PowerState::on),
+           cfmMinReading, conn, PowerState::on, sensorNumber, lun),
     parent(parent), objServer(objectServer)
 {
     sensorInterface = objectServer.add_interface(
@@ -428,10 +423,7 @@ bool CFMSensor::calculate(double& value)
             [&](const auto& item) { return item.first.ends_with(tachName); });
         if (findReading == tachReadings.end())
         {
-            if constexpr (debug)
-            {
-                lg2::error("Can't find '{NAME}' in readings", "NAME", tachName);
-            }
+            lg2::debug("Can't find '{NAME}' in readings", "NAME", tachName);
             continue; // haven't gotten a reading
         }
 
@@ -455,11 +447,7 @@ bool CFMSensor::calculate(double& value)
         // percent and mult by 100
         rpm /= findRange->second.second;
         rpm *= 100;
-
-        if constexpr (debug)
-        {
-            lg2::info("Tach '{NAME}' at '{RPM}'", "NAME", tachName, "RPM", rpm);
-        }
+        lg2::debug("Tach '{NAME}' at '{RPM}'", "NAME", tachName, "RPM", rpm);
 
         // Do a linear interpolation to get Ci
         // Ci = C1 + (C2 - C1)/(RPM2 - RPM1) * (TACHi - TACH1)
@@ -486,22 +474,16 @@ bool CFMSensor::calculate(double& value)
         // Now calculate the CFM for this tach
         // CFMi = Ci * Qmaxi * TACHi
         totalCFM += ci * maxCFM * rpm;
-        if constexpr (debug)
-        {
-            lg2::error(
-                "totalCFM = {CFM}, Ci = {CI}, MaxCFM = {MAXCFM}, rpm = {RPM}, c1 = {C1}"
-                ", c2 = {C2}, max = {MAX}, min = {MIN}",
-                "CFM", totalCFM, "CI", ci, "MAXCFM", maxCFM, "RPM", rpm, "C1",
-                c1, "C2", c2, "MAX", tachMaxPercent, "MIN", tachMinPercent);
-        }
+        lg2::debug(
+            "totalCFM = {CFM}, Ci = {CI}, MaxCFM = {MAXCFM}, rpm = {RPM}, c1 = {C1}"
+            ", c2 = {C2}, max = {MAX}, min = {MIN}",
+            "CFM", totalCFM, "CI", ci, "MAXCFM", maxCFM, "RPM", rpm, "C1", c1,
+            "C2", c2, "MAX", tachMaxPercent, "MIN", tachMinPercent);
     }
 
     // divide by 100 since rpm is in percent
     value = totalCFM / 100;
-    if constexpr (debug)
-    {
-        lg2::error("cfm value = {VALUE}", "VALUE", value);
-    }
+    lg2::debug("cfm value = {VALUE}", "VALUE", value);
     return true;
 }
 
@@ -511,10 +493,12 @@ ExitAirTempSensor::ExitAirTempSensor(
     std::shared_ptr<sdbusplus::asio::connection>& conn,
     const std::string& sensorName, const std::string& sensorConfiguration,
     sdbusplus::asio::object_server& objectServer,
-    std::vector<thresholds::Threshold>&& thresholdData) :
+    std::vector<thresholds::Threshold>&& thresholdData, uint16_t sensorNumber,
+    uint8_t lun) :
     Sensor(escapeName(sensorName), std::move(thresholdData),
            sensorConfiguration, "ExitAirTempSensor", false, false,
-           exitAirMaxReading, exitAirMinReading, conn, PowerState::on),
+           exitAirMaxReading, exitAirMinReading, conn, PowerState::on,
+           sensorNumber, lun),
     objServer(objectServer)
 {
     sensorInterface = objectServer.add_interface(
@@ -637,11 +621,8 @@ void ExitAirTempSensor::setupMatches()
                             }
                             double reading =
                                 std::visit(VariantToDoubleVisitor(), value);
-                            if constexpr (debug)
-                            {
-                                lg2::error("'{PATH}' reading '{VALUE}'", "PATH",
-                                           cbPath, "VALUE", reading);
-                            }
+                            lg2::debug("'{PATH}' reading '{VALUE}'", "PATH",
+                                       cbPath, "VALUE", reading);
                             self->powerReadings[cbPath] = reading;
                         },
                         matches[0].first, cbPath, properties::interface,
@@ -774,13 +755,10 @@ bool ExitAirTempSensor::calculate(double& val)
         return false;
     }
 
-    if constexpr (debug)
-    {
-        lg2::info(
-            "Power Factor: {POWER_FACTOR}, Inlet Temp: {INLET_TEMP}, Total Power: {TOTAL_POWER}",
-            "POWER_FACTOR", powerFactor, "INLET_TEMP", inletTemp, "TOTAL_POWER",
-            totalPower);
-    };
+    lg2::debug(
+        "Power Factor: {POWER_FACTOR}, Inlet Temp: {INLET_TEMP}, Total Power: {TOTAL_POWER}",
+        "POWER_FACTOR", powerFactor, "INLET_TEMP", inletTemp, "TOTAL_POWER",
+        totalPower);
 
     // Calculate the exit air temp
     // Texit = Tfp + (1.76 * TotalPower / CFM * Faltitude)
@@ -788,10 +766,7 @@ bool ExitAirTempSensor::calculate(double& val)
     reading /= cfm;
     reading += inletTemp;
 
-    if constexpr (debug)
-    {
-        lg2::info("Reading 1: '{VALUE}'", "VALUE", reading);
-    }
+    lg2::debug("Reading 1: '{VALUE}'", "VALUE", reading);
 
     // Now perform the exponential average
     // Calculate alpha based on SDR values and CFM
@@ -829,17 +804,11 @@ bool ExitAirTempSensor::calculate(double& val)
         alphaDT = 1.0;
     }
 
-    if constexpr (debug)
-    {
-        lg2::info("AlphaDT: '{ADT}'", "ADT", alphaDT);
-    }
+    lg2::debug("AlphaDT: '{ADT}'", "ADT", alphaDT);
 
     reading = ((reading * alphaDT) + (lastReading * (1.0 - alphaDT)));
 
-    if constexpr (debug)
-    {
-        lg2::info("Reading 2: '{VALUE}'", "VALUE", reading);
-    }
+    lg2::debug("Reading 2: '{VALUE}'", "VALUE", reading);
 
     val = reading;
     lastReading = reading;
@@ -897,10 +866,28 @@ void createSensor(sdbusplus::asio::object_server& objectServer,
 
                         std::string name =
                             loadVariant<std::string>(cfg, "Name");
+
+                        // Extract SensorNumber and LUN from configuration
+                        uint16_t sensorNumber;
+                        uint8_t lun;
+                        auto findSensorNum = cfg.find("SensorNumber");
+                        if (findSensorNum != cfg.end())
+                        {
+                            sensorNumber =
+                                std::visit(VariantToUnsignedIntVisitor(),
+                                           findSensorNum->second);
+                        }
+                        auto findLun = cfg.find("LUN");
+                        if (findLun != cfg.end())
+                        {
+                            lun = std::visit(VariantToUnsignedIntVisitor(),
+                                             findLun->second);
+                        }
+
                         exitAirSensor = nullptr;
                         exitAirSensor = std::make_shared<ExitAirTempSensor>(
                             dbusConnection, name, path.str, objectServer,
-                            std::move(sensorThresholds));
+                            std::move(sensorThresholds), sensorNumber, lun);
                         exitAirSensor->powerFactorMin =
                             loadVariant<double>(cfg, "PowerFactorMin");
                         exitAirSensor->powerFactorMax =
@@ -919,9 +906,25 @@ void createSensor(sdbusplus::asio::object_server& objectServer,
                         parseThresholdsFromConfig(interfaces, sensorThresholds);
                         std::string name =
                             loadVariant<std::string>(cfg, "Name");
+                        uint16_t cfmSensorNumber = 0;
+                        uint8_t cfmLun = 0;
+                        auto findCfmSensorNum = cfg.find("SensorNumber");
+                        if (findCfmSensorNum != cfg.end())
+                        {
+                            cfmSensorNumber =
+                                std::visit(VariantToUnsignedIntVisitor(),
+                                           findCfmSensorNum->second);
+                        }
+                        auto findCfmLun = cfg.find("LUN");
+                        if (findCfmLun != cfg.end())
+                        {
+                            cfmLun = std::visit(VariantToUnsignedIntVisitor(),
+                                                findCfmLun->second);
+                        }
                         auto sensor = std::make_shared<CFMSensor>(
                             dbusConnection, name, path.str, objectServer,
-                            std::move(sensorThresholds), exitAirSensor);
+                            std::move(sensorThresholds), exitAirSensor,
+                            cfmSensorNumber, cfmLun);
                         loadVariantPathArray(cfg, "Tachs", sensor->tachs);
                         sensor->maxCFM = loadVariant<double>(cfg, "MaxCFM");
 

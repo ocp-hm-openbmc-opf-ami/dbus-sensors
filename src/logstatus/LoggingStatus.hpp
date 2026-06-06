@@ -3,7 +3,6 @@
 #include <Discrete.hpp>
 #include <Utils.hpp>
 #include <boost/asio/deadline_timer.hpp>
-#include <boost/asio/io_service.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 #include <xyz/openbmc_project/Association/Definitions/server.hpp>
@@ -55,7 +54,7 @@ class EventStatus :
                 std::shared_ptr<sdbusplus::asio::connection>& conn,
                 const std::string& sensorName,
                 const std::string& sensorConfiguration,
-                const uint16_t& testLimit);
+                const uint16_t& testLimit, uint8_t sensorNumber, uint8_t lun);
     ~EventStatus() override;
 
     void setupRead(std::shared_ptr<sdbusplus::asio::connection>&);
@@ -71,4 +70,6 @@ class EventStatus :
     uint16_t entryCount;
     uint16_t previousEntryCount;
     std::string objectPath;
+    uint8_t sensorNumber;
+    uint8_t lun;
 };

@@ -45,10 +45,11 @@ const std::regex illegalDbusRegex("[^A-Za-z0-9_]");
 static const std::string ipmiSELAddMessage = "";
 static constexpr uint16_t selBMCGenID = 0x0020;
 static constexpr uint8_t osCriticalStop = 0x20;
+static constexpr uint16_t defaultSensorNumber = 0xfffe;
+static constexpr uint8_t defaultLun = 0;
 
 // Processor sensor
 static const std::string processorPath = "/xyz/openbmc_project/sensors/cpu/";
-static const std::vector<uint8_t> procPresence{0x07, 0xFF, 0xFF};
 
 // IPMI Sel
 static constexpr const char* ipmiService = "xyz.openbmc_project.Logging.IPMI";
@@ -81,23 +82,26 @@ inline std::string escapeName(const std::string& sensorName)
 }
 
 // Add IPMI & Refish Log
-#ifdef FEATURE_APISENSOR_SUPPORT
 // Existing code does nothing with AdditionalData.
 // APISensor properly uses AdditionalData.
 // To keep compatibility with existing code, make AdditionalData
 // optional argument passed to addSelEntry().
 using AdditionalData = std::map<std::string, std::string>;
+#ifdef FEATURE_APISENSOR_SUPPORT
 void addSelEntry(
     [[maybe_unused]] std::shared_ptr<sdbusplus::asio::connection>& conn,
-    std::vector<std::string> logData, std::vector<uint8_t> eventData,
-    bool assert,
-    /* OPTIONAL */ const AdditionalData addData = AdditionalData());
+    const std::vector<std::string>& logData,
+    const std::vector<uint8_t>& eventData, bool assert,
+    uint16_t sensorNumber = defaultSensorNumber,
+    const AdditionalData addData = AdditionalData());
 
 void toHexStr(const std::vector<uint8_t> bytes, std::string& hexStr);
 #else
 void addSelEntry(std::shared_ptr<sdbusplus::asio::connection>& conn,
-                 std::vector<std::string> logData,
-                 std::vector<uint8_t> eventData, bool assert);
+                 const std::vector<std::string>& logData,
+                 const std::vector<uint8_t>& eventData, bool assert,
+                 uint16_t sensorNumber = defaultSensorNumber,
+                 const AdditionalData addData = AdditionalData());
 #endif
 enum class PowerState
 {
@@ -350,7 +354,8 @@ struct GetSensorConfiguration :
             retries = 5;
         }
 
-        std::vector<std::string> interfaces(types.size());
+        std::vector<std::string> interfaces;
+        interfaces.reserve(types.size());
         for (const auto& type : types)
         {
             interfaces.push_back(configInterfaceName(type));

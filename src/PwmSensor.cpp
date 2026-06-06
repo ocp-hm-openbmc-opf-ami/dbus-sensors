@@ -41,9 +41,11 @@ PwmSensor::PwmSensor(const std::string& pwmname, const std::string& sysPath,
                      std::shared_ptr<sdbusplus::asio::connection>& conn,
                      sdbusplus::asio::object_server& objectServer,
                      const std::string& sensorConfiguration,
-                     const std::string& sensorType, bool isValueMutable) :
+                     const std::string& sensorType, bool isValueMutable,
+                     uint16_t sensorNumber, uint8_t lun) :
     sysPath(sysPath), objectServer(objectServer),
-    name(sensor_paths::escapePathForDbus(pwmname))
+    name(sensor_paths::escapePathForDbus(pwmname)), sensorNumber(sensorNumber),
+    lun(lun)
 {
     // add interface under sensor and Control.FanPwm as Control is used
     // in obmc project, also add sensor so it can be viewed as a sensor
@@ -92,10 +94,11 @@ PwmSensor::PwmSensor(const std::string& pwmname, const std::string& sysPath,
             {
                 return 1;
             }
-            setValue(reqInt);
+            // Scale Value to match Target unit
+            auto scaledValue = (req / 100.0) * targetIfaceMax;
+            auto targetValue = static_cast<uint64_t>(std::round(scaledValue));
+            controlInterface->set_property("Target", targetValue);
             resp = req;
-
-            controlInterface->signal_property("Target");
 
             return 1;
         },
@@ -109,7 +112,6 @@ PwmSensor::PwmSensor(const std::string& pwmname, const std::string& sysPath,
                 double getScaled =
                     100.0 * (static_cast<double>(getInt) / pwmMax);
                 curVal = getScaled;
-                controlInterface->signal_property("Target");
                 sensorInterface->signal_property("Value");
             }
             return curVal;
@@ -118,6 +120,8 @@ PwmSensor::PwmSensor(const std::string& pwmname, const std::string& sysPath,
     sensorInterface->register_property("MaxValue", static_cast<double>(100));
     sensorInterface->register_property("MinValue", static_cast<double>(0));
     sensorInterface->register_property("Unit", sensor_paths::unitPercent);
+    sensorInterface->register_property("SensorNumber", sensorNumber);
+    sensorInterface->register_property("LUN", lun);
 
     controlInterface = objectServer.add_interface(
         "/xyz/openbmc_project/control/fanpwm/" + name,
@@ -150,8 +154,6 @@ PwmSensor::PwmSensor(const std::string& pwmname, const std::string& sysPath,
             auto value = static_cast<uint64_t>(roundValue);
             if (curVal != value)
             {
-                curVal = value;
-                controlInterface->signal_property("Target");
                 sensorInterface->signal_property("Value");
             }
             return curVal;

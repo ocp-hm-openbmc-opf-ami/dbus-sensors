@@ -97,7 +97,8 @@ void EventStatus::checkState()
         logData.push_back(this->name);
         logData.push_back(eventName);
         logData.push_back(objectPath);
-        addSelEntry(conn, logData, EventDatas, true);
+
+        addSelEntry(conn, logData, EventDatas, true, sensorNumber);
     }
 }
 

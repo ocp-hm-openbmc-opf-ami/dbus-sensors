@@ -14,7 +14,8 @@ class ChassisIntrusionSensor
 {
   public:
     explicit ChassisIntrusionSensor(bool autoRearm,
-                                    sdbusplus::asio::object_server& objServer);
+                                    sdbusplus::asio::object_server& objServer,
+                                    uint16_t sensorNumber, uint8_t lun);
 
     virtual ~ChassisIntrusionSensor();
 
@@ -31,6 +32,8 @@ class ChassisIntrusionSensor
     bool mAutoRearm;
     std::shared_ptr<sdbusplus::asio::dbus_interface> mIface;
     sdbusplus::asio::object_server& mObjServer;
+    uint16_t mSensorNumber;
+    uint8_t mLun;
     bool mOverridenState = false;
     bool mInternalSet = false;
     bool mRearmFlag = false;
@@ -45,7 +48,8 @@ class ChassisIntrusionPchSensor :
   public:
     ChassisIntrusionPchSensor(bool autoRearm, boost::asio::io_context& io,
                               sdbusplus::asio::object_server& objServer,
-                              int busId, int slaveAddr);
+                              int busId, int slaveAddr, uint16_t sensorNumber,
+                              uint8_t lun);
 
     ~ChassisIntrusionPchSensor() override;
 
@@ -64,7 +68,8 @@ class ChassisIntrusionGpioSensor :
   public:
     ChassisIntrusionGpioSensor(bool autoRearm, boost::asio::io_context& io,
                                sdbusplus::asio::object_server& objServer,
-                               bool gpioInverted);
+                               bool gpioInverted, uint16_t sensorNumber,
+                               uint8_t lun);
 
     ~ChassisIntrusionGpioSensor() override;
 
@@ -84,7 +89,8 @@ class ChassisIntrusionHwmonSensor :
   public:
     ChassisIntrusionHwmonSensor(bool autoRearm, boost::asio::io_context& io,
                                 sdbusplus::asio::object_server& objServer,
-                                std::string hwmonName);
+                                std::string hwmonName, uint16_t sensorNumber,
+                                uint8_t lun);
 
     ~ChassisIntrusionHwmonSensor() override;
 

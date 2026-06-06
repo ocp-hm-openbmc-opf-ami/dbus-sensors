@@ -3,7 +3,6 @@
 #include <Discrete.hpp>
 #include <Utils.hpp>
 #include <boost/asio/deadline_timer.hpp>
-#include <boost/asio/io_service.hpp>
 #include <boost/container/flat_map.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 
