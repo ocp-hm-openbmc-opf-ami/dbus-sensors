@@ -596,6 +596,8 @@ void createSensors(
             // optional, defaulting
             // to false
             bool isValueMutable = false;
+            uint16_t pwmSensorNumber = sensorNumber;
+            uint8_t pwmLun = lun;
             if (connector != sensorData->end())
             {
                 auto findPwm = connector->second.find("Pwm");
@@ -669,6 +671,54 @@ void createSensors(
                         led = *ledName;
                     }
                 }
+                auto findPwmSensorNum = connector->second.find("SensorNumber");
+                if (findPwmSensorNum != connector->second.end())
+                {
+                    try
+                    {
+                        unsigned int val =
+                            std::visit(VariantToUnsignedIntVisitor(),
+                                       findPwmSensorNum->second);
+                        if (val > std::numeric_limits<uint16_t>::max())
+                        {
+                            lg2::error(
+                                "ERROR: PwmSensorNumber out of range : {VAL}",
+                                "VAL", val);
+                        }
+                        else
+                        {
+                            pwmSensorNumber = static_cast<uint16_t>(val);
+                        }
+                    }
+                    catch (const std::exception& ex)
+                    {
+                        lg2::error("ERROR: Invalid PwmSensorNumber : {ERR}",
+                                   "ERR", ex.what());
+                    }
+                }
+                auto findPwmLun = connector->second.find("LUN");
+                if (findPwmLun != connector->second.end())
+                {
+                    try
+                    {
+                        unsigned int val = std::visit(
+                            VariantToUnsignedIntVisitor(), findPwmLun->second);
+                        if (val > std::numeric_limits<uint8_t>::max())
+                        {
+                            lg2::error("ERROR: PwmLUN out of range : {VAL}",
+                                       "VAL", val);
+                        }
+                        else
+                        {
+                            pwmLun = static_cast<uint8_t>(val);
+                        }
+                    }
+                    catch (const std::exception& ex)
+                    {
+                        lg2::error("ERROR: Invalid PwmLUN : {ERR}", "ERR",
+                                   ex.what());
+                    }
+                }
             }
 
             findLimits(limits, baseConfiguration);
@@ -689,7 +739,8 @@ void createSensors(
             {
                 pwmSensors[pwmPath] = std::make_unique<PwmSensor>(
                     pwmName, pwmPath, dbusConnection, objectServer,
-                    *interfacePath, "Fan", isValueMutable, sensorNumber, lun);
+                    *interfacePath, "Fan", isValueMutable, pwmSensorNumber,
+                    pwmLun);
             }
         }
 

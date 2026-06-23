@@ -275,7 +275,8 @@ static void checkPWMSensor(
     const std::filesystem::path& sensorPath, std::string& labelHead,
     const std::string& interfacePath,
     std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
-    sdbusplus::asio::object_server& objectServer, const std::string& psuName)
+    sdbusplus::asio::object_server& objectServer, const std::string& psuName,
+    uint16_t sensorNumber, uint8_t lun)
 {
     auto findPWMSensor = pwmSensors.find(psuName + labelHead);
     if (findPWMSensor != pwmSensors.end())
@@ -311,7 +312,7 @@ static void checkPWMSensor(
     {
         pwmSensors[psuName + labelHead] = std::make_unique<PwmSensor>(
             name, pwmPathStr, dbusConnection, objectServer, objPath, "PSU",
-            false, defaultSensorNumber, defaultLun);
+            false, sensorNumber, lun);
         return;
     }
 
@@ -684,8 +685,65 @@ static void createSensorsCallback(
                         continue;
                     }
                 }
+                // Read PWM-specific sensor number from config.
+                // Key convention: fan1_PwmSensorNumber, fan2_PwmSensorNumber …
+                uint16_t pwmSensorNumber = defaultSensorNumber;
+                uint8_t pwmLun = defaultLun;
+                std::string keyPwmSensorNum = labelHead + "_PwmSensorNumber";
+                std::string keyPwmLun = labelHead + "_PwmLUN";
+                auto findPwmSensorNum = baseConfig->find(keyPwmSensorNum);
+                if (findPwmSensorNum != baseConfig->end())
+                {
+                    try
+                    {
+                        unsigned int val =
+                            std::visit(VariantToUnsignedIntVisitor(),
+                                       findPwmSensorNum->second);
+                        if (val > std::numeric_limits<uint16_t>::max())
+                        {
+                            lg2::error(
+                                "ERROR: PwmSensorNumber out of range for '{LABEL}': {VAL}",
+                                "LABEL", labelHead, "VAL", val);
+                        }
+                        else
+                        {
+                            pwmSensorNumber = static_cast<uint16_t>(val);
+                        }
+                    }
+                    catch (const std::exception& ex)
+                    {
+                        lg2::error(
+                            "ERROR: Invalid PwmSensorNumber for '{LABEL}': {ERR}",
+                            "LABEL", labelHead, "ERR", ex.what());
+                    }
+                }
+                auto findPwmLun = baseConfig->find(keyPwmLun);
+                if (findPwmLun != baseConfig->end())
+                {
+                    try
+                    {
+                        unsigned int val = std::visit(
+                            VariantToUnsignedIntVisitor(), findPwmLun->second);
+                        if (val > std::numeric_limits<uint8_t>::max())
+                        {
+                            lg2::error(
+                                "ERROR: PwmLUN out of range for '{LABEL}': {VAL}",
+                                "LABEL", labelHead, "VAL", val);
+                        }
+                        else
+                        {
+                            pwmLun = static_cast<uint8_t>(val);
+                        }
+                    }
+                    catch (const std::exception& ex)
+                    {
+                        lg2::error("ERROR: Invalid PwmLUN for '{LABEL}': {ERR}",
+                                   "LABEL", labelHead, "ERR", ex.what());
+                    }
+                }
                 checkPWMSensor(sensorPath, labelHead, *interfacePath,
-                               dbusConnection, objectServer, psuNames[0]);
+                               dbusConnection, objectServer, psuNames[0],
+                               pwmSensorNumber, pwmLun);
             }
             else if (devType == DevTypes::IIO)
             {
