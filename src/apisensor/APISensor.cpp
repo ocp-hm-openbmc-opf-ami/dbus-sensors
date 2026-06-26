@@ -31,7 +31,6 @@
 
 #define DISCRETE_SENSOR_SEL_LOGGING // TODO: move to meson.options
 
-static constexpr bool debug = false;
 static const std::string debugMsgPrefix = "APISensor: ";
 
 APISensor::APISensor(

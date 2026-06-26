@@ -270,9 +270,12 @@ void ProcessorStatus::monitorDbus()
         }
         catch (sdbusplus::exception_t& e)
         {
-            phosphor::logging::log<phosphor::logging::level::ERR>(
-                "Failed to fetch",
-                phosphor::logging::entry("EXCEPTION=%s", e.what()));
+            if (debug)
+            {
+                phosphor::logging::log<phosphor::logging::level::ERR>(
+                    "Failed to fetch",
+                    phosphor::logging::entry("EXCEPTION=%s", e.what()));
+            }
         }
     }
 
@@ -352,7 +355,10 @@ void ProcessorStatus::pollGpioStates()
         }
         catch (const std::exception& e)
         {
-            std::cerr << "GPIO poll error: " << e.what() << "\n";
+            if (debug)
+            {
+                std::cerr << "GPIO poll error: " << e.what() << "\n";
+            }
         }
     }
 

@@ -15,6 +15,7 @@
 using namespace phosphor::logging;
 using namespace sdbusplus;
 
+static constexpr bool debug = false;
 constexpr const char* sensorStateInterface = "xyz.openbmc_project.Sensor.State";
 constexpr auto PROP_INTF = "org.freedesktop.DBus.Properties";
 constexpr auto METHOD_GET = "Get";
@@ -192,8 +193,10 @@ inline std::string getService(const std::string& intf, const std::string& path)
     }
     catch (const sdbusplus::exception::exception& ex)
     {
-        log<level::ERR>("ObjectMapper call failure",
-                        entry("WHAT=%s", ex.what()));
+        if (debug)
+        {
+            std::cerr << "ObjectMapper call failure: " << ex.what() << "\n";
+        }
         throw;
     }
 

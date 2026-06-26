@@ -36,7 +36,6 @@
 // in entity-manager JSON config file making it easy to create a simple sensor.
 // The goal of APISensor is to simplify the process and reduce the time of
 // creating sensors.
-static constexpr bool debug = false;
 
 static const char* libAPISensorFile = "/usr/lib/libapisensor.so.1.0.0";
 static const std::string debugMsgPrefix = "APISensorMain: ";
