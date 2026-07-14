@@ -83,7 +83,10 @@ void ACPIDeviceStatus::psuMonitorState()
     reading = 0;
     if (!(deviceAddress.has_value()) || !(deviceAddress.has_value()))
     {
-        std::cerr << "i2c bus address not configured \n";
+        if (debug)
+        {
+            std::cerr << "i2c bus address not configured \n";
+        }
         logData[1] = "D3";
         eventData[0] = static_cast<uint8_t>(ACPI::D3);
         addSelEntry(conn, logData, eventData, true, sensorNumber);
@@ -103,7 +106,10 @@ void ACPIDeviceStatus::psuMonitorState()
         fs::path filePath = findFile(hwmonPath, targetFilename);
         if (filePath.empty())
         {
-            std::cerr << "filePath not found \n";
+            if (debug)
+            {
+                std::cerr << "filePath not found \n";
+            }
         }
         std::optional<std::string> val = openAndRead(filePath);
         if (val.has_value())
@@ -115,7 +121,10 @@ void ACPIDeviceStatus::psuMonitorState()
             catch (const std::invalid_argument& e)
             {
                 data = -1;
-                std::cerr << "Invalid argument: " << e.what() << std::endl;
+                if (debug)
+                {
+                    std::cerr << "Invalid argument: " << e.what() << std::endl;
+                }
             }
             if (data > 0)
             {
