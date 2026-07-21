@@ -523,7 +523,7 @@ void createSensors(
                             dbusConnection, io, sensorName,
                             std::move(sensorThresholds), thisSensorParameters,
                             pollRate, interfacePath, readState, i2cDev,
-                            sensorNumber, lun);
+                            sensorNumber, lun, index);
                         sensor->setupRead();
                     }
                 }
@@ -591,7 +591,7 @@ void createSensors(
                                 dbusConnection, io, sensorName,
                                 std::move(thresholds), thisSensorParameters,
                                 pollRate, interfacePath, readState, i2cDev,
-                                sensorNumber, lun);
+                                sensorNumber, lun, index);
                             sensor->setupRead();
                         }
                     }
