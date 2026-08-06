@@ -2,6 +2,7 @@ if not get_option('tests').allowed()
     subdir_done()
 endif
 
+gtest_dep = dependency('gtest', disabler: true, required: false)
 gmock_dep = dependency('gmock', disabler: true, required: false)
 if not gtest_dep.found() or not gmock_dep.found()
     gtest_proj = import('cmake').subproject('googletest', required: false)
@@ -20,6 +21,14 @@ if not gtest_dep.found() or not gmock_dep.found()
             'Googletest is required if tests are enabled',
         )
     endif
+else
+    gtest_dep = declare_dependency(
+        dependencies: [
+            dependency('threads'),
+            gtest_dep,
+            dependency('gtest_main', required: false),
+        ],
+    )
 endif
 
 ut_deps_list = [gtest_dep]
