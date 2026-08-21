@@ -38,6 +38,8 @@
 #include <utility>
 #include <vector>
 
+static constexpr bool debug = false;
+
 PSUCombineEvent::PSUCombineEvent(
     sdbusplus::asio::object_server& objectServer,
     std::shared_ptr<sdbusplus::asio::connection>& conn,
@@ -344,7 +346,10 @@ void PSUSubEvent::updateValue(const int& newValue)
     }
     else
     {
-        lg2::error("PSUSubEvent asserted by '{PATH}'", "PATH", path);
+        if (debug)
+        {
+            lg2::error("PSUSubEvent asserted by '{PATH}'", "PATH", path);
+        }
 
         if ((!*assertState) && ((*asserts).empty()))
         {
@@ -354,16 +359,22 @@ void PSUSubEvent::updateValue(const int& newValue)
                 // Fan Failed has two args
                 if (assertMessage == "OpenBMC.0.1.PowerSupplyFanFailed")
                 {
-                    lg2::warning("'{EVENT}' assert", "EVENT", eventName,
-                                 "REDFISH_MESSAGE_ID", assertMessage,
-                                 "REDFISH_MESSAGE_ARGS",
-                                 (psuName + ',' + fanName));
+                    if (debug)
+                    {
+                        lg2::warning("'{EVENT}' assert", "EVENT", eventName,
+                                     "REDFISH_MESSAGE_ID", assertMessage,
+                                     "REDFISH_MESSAGE_ARGS",
+                                     (psuName + ',' + fanName));
+                    }
                 }
                 else
                 {
-                    lg2::warning("'{EVENT}' assert", "EVENT", eventName,
-                                 "REDFISH_MESSAGE_ID", assertMessage,
-                                 "REDFISH_MESSAGE_ARGS", psuName);
+                    if (debug)
+                    {
+                        lg2::warning("'{EVENT}' assert", "EVENT", eventName,
+                                     "REDFISH_MESSAGE_ID", assertMessage,
+                                     "REDFISH_MESSAGE_ARGS", psuName);
+                    }
                 }
             }
             if ((*combineEvent).empty())
