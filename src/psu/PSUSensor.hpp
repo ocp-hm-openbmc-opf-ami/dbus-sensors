@@ -8,6 +8,8 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/random_access_file.hpp>
 #include <boost/asio/steady_timer.hpp>
+#include <gpiod.hpp>
+#include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 
@@ -15,9 +17,116 @@
 #include <cstddef>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
+
+class BridgeGpio
+{
+  public:
+    BridgeGpio(const std::string& name, const int polarity,
+               const float setupTime) :
+        setupTimeMs(static_cast<unsigned int>(setupTime * 1000)), name(name),
+        polarity(polarity)
+    {}
+
+    BridgeGpio(const BridgeGpio&) = delete;
+    BridgeGpio& operator=(const BridgeGpio&) = delete;
+
+    BridgeGpio(BridgeGpio&& other) noexcept :
+        setupTimeMs(other.setupTimeMs), name(std::move(other.name)),
+        polarity(other.polarity), line(std::move(other.line)),
+        valid(other.valid)
+    {
+        other.valid = false;
+    }
+
+    BridgeGpio& operator=(BridgeGpio&& other) noexcept
+    {
+        if (this != &other)
+        {
+            if (valid && line)
+            {
+                set(0);
+                line.release();
+            }
+            setupTimeMs = other.setupTimeMs;
+            name = std::move(other.name);
+            polarity = other.polarity;
+            line = std::move(other.line);
+            valid = other.valid;
+            other.valid = false;
+        }
+        return *this;
+    }
+
+    // Request the gpio line. This must be deferred out of the constructor so
+    // that BridgeGpio can be safely moved through std::optional (e.g.
+    // during sensor creation) without a temporary releasing the line. Call
+    // exactly once on the object that owns the line for its lifetime.
+    void initialize()
+    {
+        line = gpiod::find_line(name);
+        if (!line)
+        {
+            lg2::error("PSUSensor: Error finding gpio: '{NAME}'", "NAME", name);
+            return;
+        }
+        try
+        {
+            line.request({"psusensor", gpiod::line_request::DIRECTION_OUTPUT,
+                          polarity == gpiod::line::ACTIVE_HIGH
+                              ? 0
+                              : gpiod::line_request::FLAG_ACTIVE_LOW});
+            valid = true;
+        }
+        catch (const std::system_error&)
+        {
+            line.release();
+            lg2::error("PSUSensor: Error requesting gpio: '{NAME}'", "NAME",
+                       name);
+        }
+    }
+
+    ~BridgeGpio()
+    {
+        if (valid && line)
+        {
+            set(0);
+            line.release();
+        }
+    }
+
+    void set(int value)
+    {
+        if (line)
+        {
+            try
+            {
+                line.set_value(value);
+            }
+            catch (const std::system_error&)
+            {
+                lg2::error("PSUSensor: Error setting gpio");
+            }
+        }
+    }
+
+    bool isValid() const
+    {
+        return valid;
+    }
+
+    unsigned int setupTimeMs;
+
+  private:
+    std::string name;
+    int polarity;
+    gpiod::line line;
+    bool valid = false;
+};
 
 class PSUSensor : public Sensor, public std::enable_shared_from_this<PSUSensor>
 {
@@ -32,7 +141,8 @@ class PSUSensor : public Sensor, public std::enable_shared_from_this<PSUSensor>
               unsigned int factor, double max, double min, double offset,
               const std::string& label, size_t tSize, double pollRate,
               const std::shared_ptr<I2CDevice>& i2cDevice,
-              uint16_t sensorNumber, uint8_t lun);
+              uint16_t sensorNumber, uint8_t lun,
+              std::optional<BridgeGpio>&& bridgeGpio = std::nullopt);
     ~PSUSensor() override;
     void setupRead();
     void activate(const std::string& newPath,
@@ -67,6 +177,7 @@ class PSUSensor : public Sensor, public std::enable_shared_from_this<PSUSensor>
     // It is not a real concern for VRs, add a filter to only assert thresholds
     // if more than one zero are read in consecutive polling cycles
     bool filterZero = false;
+    std::optional<BridgeGpio> bridgeGpio;
 
     static constexpr size_t warnAfterErrorCount = 10;
 
