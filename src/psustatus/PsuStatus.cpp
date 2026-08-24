@@ -137,6 +137,7 @@ void PsuStatus::initHwmonPath(const uint64_t bus, const uint64_t address)
 void PsuStatus::setupRead()
 {
     initHwmonPath(bus, address);
+    bool ioError = false;
     for (const auto& match : eventPathList)
     {
         const std::vector<std::string>& eventAttrs = match.second;
@@ -154,9 +155,27 @@ void PsuStatus::setupRead()
             if (!std::getline(stream, line))
             {
                 std::cerr << "Error reading status at " << hwmonPath << "\n";
-                continue;
+                if (stream.bad() || stream.fail())
+                {
+                    ioError = true;
+                }
             }
-            value = std::stoi(line);
+            else
+            {
+                try
+                {
+                    value = std::stoi(line);
+                }
+                catch (sdbusplus::exception_t& e)
+                {
+                    if (debug)
+                    {
+                        phosphor::logging::log<phosphor::logging::level::ERR>(
+                            "Failed to fetch",
+                            phosphor::logging::entry("EXCEPTION=%s", e.what()));
+                    }
+                }
+            }
 
             std::string strr = match.first;
             auto findEvent = eventType.find(strr.c_str());
@@ -185,6 +204,15 @@ void PsuStatus::setupRead()
             restartRead();
         }
     }
+
+    if (ioError)
+    {
+        // File read error (EIO): PSU removed but hwmon sysfs still exists.
+        // Clear all state bits so no stale events remain.
+        updateState(sensorInterface, 0);
+        presenceLogged = false;
+    }
+
     restartRead();
 }
 void PsuStatus::updateEvent(uint8_t offset, uint8_t value)
