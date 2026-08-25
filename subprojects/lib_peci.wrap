@@ -1,0 +1,6 @@
+[wrap-git]
+url = https://git.ami.com/core/ami-bmc/one-tree/core/libpeci.git
+revision = HEAD
+
+[provide]
+libpeci = libpeci_dep

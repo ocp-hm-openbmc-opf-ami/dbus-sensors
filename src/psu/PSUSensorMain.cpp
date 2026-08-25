@@ -373,8 +373,11 @@ static void createSensorsCallback(
         {
             // To avoid this error message, add your driver name to
             // the pmbusNames vector at the top of this file.
-            lg2::error("'{NAME}' not found in sensor whitelist", "NAME",
-                       pmbusName);
+            if (debug)
+            {
+                lg2::error("'{NAME}' not found in sensor whitelist", "NAME",
+                           pmbusName);
+            }
             continue;
         }
 
@@ -489,7 +492,11 @@ static void createSensorsCallback(
         {
             // To avoid this error message, add your export map entry,
             // from Entity Manager, to sensorTypes at the top of this file.
-            lg2::error("failed to find match for '{NAME}'", "NAME", deviceName);
+            if (debug)
+            {
+                lg2::error("failed to find match for '{NAME}'", "NAME",
+                           deviceName);
+            }
             continue;
         }
 
