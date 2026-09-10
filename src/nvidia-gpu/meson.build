@@ -26,12 +26,17 @@ endif
 gpusensor_include_dir = include_directories('.', is_system: true)
 sensor_include_dir = include_directories('../..')
 
+nvidia_deps = [thresholds_dep, utils_dep]
+if get_option('tests').enabled()
+    nvidia_deps += [mctpasio_dep]
+endif
+
 executable(
     'nvidiagpusensor',
     gpusensor_sources + files('NvidiaGpuSensorMain.cpp'),
     implicit_include_directories: false,
     include_directories: [gpusensor_include_dir, sensor_include_dir],
-    dependencies: [thresholds_dep, utils_dep],
+    dependencies: nvidia_deps,
     install: true,
     install_dir: '/usr/libexec/dbus-sensors',
 )

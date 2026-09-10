@@ -32,6 +32,13 @@ add_project_arguments(
     language: 'cpp',
 )
 
+if (get_option('tests').enabled())
+    add_project_arguments(
+        '-Wno-error=maybe-uninitialized',
+        language: 'cpp',
+    )
+endif
+
 threads = dependency('threads')
 # i2c-tools doesn't ship a pkg-config file for libi2c
 i2c = meson.get_compiler('cpp').find_library('i2c')
@@ -39,8 +46,24 @@ uring = dependency('liburing', include_type: 'system')
 nlohmann_json_dep = dependency('nlohmann_json', include_type: 'system')
 gpiodcxx = dependency('libgpiodcxx', default_options: ['bindings=cxx'])
 boost = dependency('boost', version: '>=1.88.0', include_type: 'system', fallback: 'boost-meson',)
-sdbusplus = dependency('sdbusplus')
-phosphor_logging_dep = dependency('phosphor-logging')
+if (get_option('tests').enabled())
+    sdbusplus = subproject('sdbusplus').get_variable('sdbusplus_dep')
+    meson.override_dependency('sdbusplus', sdbusplus)
+    phosphor_dbus_interfaces_dep = subproject('phosphor_dbus_interfaces').get_variable('phosphor_dbus_interfaces_dep')
+    phosphor_logging_dep = subproject('phosphor-logging').get_variable('phosphor_logging_dep')
+else
+    sdbusplus = dependency('sdbusplus')
+    phosphor_logging_dep = dependency('phosphor-logging')
+endif
+tests_opt = get_option('tests')
+if tests_opt.enabled()
+    add_project_arguments('-DUNIT_TESTING', language: 'cpp')
+    peci_dep = dependency('lib_peci', required: false)
+    if not peci_dep.found()
+        peci_proj = subproject('lib_peci', required: true)
+        peci_dep = peci_proj.get_variable('libpeci_dep')
+    endif
+endif
 libudev = dependency('libudev', required : false, include_type: 'system')
 libpsmapisensor = dependency('libpsmapisensor', required : false , include_type: 'system')
 boost_dep = dependency(
@@ -57,6 +80,11 @@ default_deps = [
     uring,
     libpsmapisensor,
 ]
+if tests_opt.enabled()
+    default_deps += [
+        peci_dep,
+        ]
+endif
 
 subdir('service_files')
 subdir('src')
