@@ -54,14 +54,14 @@ PSUSensor::PSUSensor(
     const std::string& sensorUnits, unsigned int factor, double max, double min,
     double offset, const std::string& label, size_t tSize, double pollRate,
     const std::shared_ptr<I2CDevice>& i2cDevice, uint16_t sensorNumber,
-    uint8_t lun) :
+    uint8_t lun, std::optional<BridgeGpio>&& bridgeGpioIn) :
     Sensor(escapeName(sensorName), std::move(thresholdsIn), sensorConfiguration,
            objectType, false, false, max, min, conn, powerState, sensorNumber,
            lun),
     i2cDevice(i2cDevice), objServer(objectServer),
     inputDev(io, path, boost::asio::random_access_file::read_only),
     waitTimer(io), path(path), sensorFactor(factor), sensorOffset(offset),
-    thresholdTimer(io)
+    thresholdTimer(io), bridgeGpio(std::move(bridgeGpioIn))
 {
     buffer = std::make_shared<std::array<char, 128>>();
     std::string unitPath = sensor_paths::getPathForUnits(sensorUnits);
@@ -69,6 +69,15 @@ PSUSensor::PSUSensor(
     if (unitPath == "temperature" && (name.find("CPU") != std::string::npos))
     {
         filterZero = true;
+    }
+
+    // Request the bridge GPIO line now that it is owned by this sensor for the
+    // remainder of its lifetime. Deferring the request out of BridgeGpio's
+    // constructor avoids a temporary releasing the line while it is moved
+    // through std::optional during sensor creation.
+    if (bridgeGpio.has_value())
+    {
+        bridgeGpio->initialize();
     }
 
     lg2::debug(
@@ -150,6 +159,10 @@ void PSUSensor::deactivate()
     // close the input dev to cancel async operations
     inputDev.close();
     waitTimer.cancel();
+    if (bridgeGpio.has_value() && bridgeGpio->isValid())
+    {
+        bridgeGpio->set(0);
+    }
     i2cDevice = nullptr;
     path = "";
 }
@@ -171,22 +184,57 @@ void PSUSensor::setupRead()
     }
 
     std::weak_ptr<PSUSensor> weak = weak_from_this();
-    // Note, we are building a asio buffer that is one char smaller than
-    // the actual data structure, so that we can always append the null
-    // terminator.  This can go away once std::from_chars<double> is available
-    // in the standard
-    inputDev.async_read_some_at(
-        0, boost::asio::buffer(buffer->data(), buffer->size() - 1),
-        [weak, buffer{buffer}](const boost::system::error_code& ec,
-                               size_t bytesRead) {
-            std::shared_ptr<PSUSensor> self = weak.lock();
-            if (!self)
-            {
-                return;
-            }
 
-            self->handleResponse(ec, bytesRead);
-        });
+    if (bridgeGpio.has_value() && bridgeGpio->isValid())
+    {
+        bridgeGpio->set(1);
+        // Assert the bridge GPIO and wait for the circuit to stabilize
+        // before performing the ADC read.
+        waitTimer.expires_after(
+            std::chrono::milliseconds(bridgeGpio->setupTimeMs));
+        waitTimer.async_wait(
+            [weak, buffer{buffer}](const boost::system::error_code& ec) {
+                std::shared_ptr<PSUSensor> self = weak.lock();
+                if (!self)
+                {
+                    return;
+                }
+                if (ec == boost::asio::error::operation_aborted)
+                {
+                    return;
+                }
+                self->inputDev.async_read_some_at(
+                    0, boost::asio::buffer(buffer->data(), buffer->size() - 1),
+                    [weak, buffer](const boost::system::error_code& ec2,
+                                   size_t bytesRead) {
+                        std::shared_ptr<PSUSensor> self2 = weak.lock();
+                        if (!self2)
+                        {
+                            return;
+                        }
+                        self2->handleResponse(ec2, bytesRead);
+                    });
+            });
+    }
+    else
+    {
+        // Note, we are building a asio buffer that is one char smaller than
+        // the actual data structure, so that we can always append the null
+        // terminator.  This can go away once std::from_chars<double> is
+        // available in the standard
+        inputDev.async_read_some_at(
+            0, boost::asio::buffer(buffer->data(), buffer->size() - 1),
+            [weak, buffer{buffer}](const boost::system::error_code& ec,
+                                   size_t bytesRead) {
+                std::shared_ptr<PSUSensor> self = weak.lock();
+                if (!self)
+                {
+                    return;
+                }
+
+                self->handleResponse(ec, bytesRead);
+            });
+    }
 }
 
 void PSUSensor::restartRead()
@@ -215,12 +263,20 @@ void PSUSensor::handleResponse(const boost::system::error_code& err,
     if (err == boost::asio::error::operation_aborted)
     {
         lg2::error("Read aborted");
+        if (bridgeGpio.has_value() && bridgeGpio->isValid())
+        {
+            bridgeGpio->set(0);
+        }
         return;
     }
     if ((err == boost::system::errc::bad_file_descriptor) ||
         (err == boost::asio::error::misc_errors::not_found))
     {
         lg2::error("Bad file descriptor for '{PATH}'", "PATH", path);
+        if (bridgeGpio.has_value() && bridgeGpio->isValid())
+        {
+            bridgeGpio->set(0);
+        }
         return;
     }
     if (err || bytesRead == 0)
@@ -228,6 +284,10 @@ void PSUSensor::handleResponse(const boost::system::error_code& err,
         if (readingStateGood())
         {
             lg2::error("'{NAME}' read failed", "NAME", name);
+        }
+        if (bridgeGpio.has_value() && bridgeGpio->isValid())
+        {
+            bridgeGpio->set(0);
         }
         restartRead();
         return;
@@ -247,6 +307,10 @@ void PSUSensor::handleResponse(const boost::system::error_code& err,
                 std::cerr << "INFO: Skipping zero temperature for " << name
                           << "\n";
             }
+            if (bridgeGpio.has_value() && bridgeGpio->isValid())
+            {
+                bridgeGpio->set(0);
+            }
             restartRead();
             return;
         }
@@ -259,6 +323,11 @@ void PSUSensor::handleResponse(const boost::system::error_code& err,
     {
         lg2::error("Could not parse input from '{PATH}'", "PATH", path);
         incrementError();
+    }
+
+    if (bridgeGpio.has_value() && bridgeGpio->isValid())
+    {
+        bridgeGpio->set(0);
     }
 
     restartRead();

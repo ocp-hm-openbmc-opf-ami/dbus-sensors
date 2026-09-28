@@ -10,6 +10,7 @@ executable(
     dependencies: [
         default_deps,
         devicemgmt_dep,
+        gpiodcxx,
         pwmsensor_dep,
         thresholds_dep,
         utils_dep,
