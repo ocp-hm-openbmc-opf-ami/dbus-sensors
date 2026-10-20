@@ -22,6 +22,7 @@
 #include <cmath>
 #include <exception>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -57,6 +58,7 @@
 // https://github.com/openbmc/docs/tree/master/designs/
 
 static const char* sensorType = "ExternalSensor";
+static constexpr unsigned int maxLun = 3;
 
 void updateReaper(
     boost::container::flat_map<std::string, std::shared_ptr<ExternalSensor>>&
@@ -302,6 +304,41 @@ void createSensors(
 
                 PowerState readState = getPowerState(baseConfigMap);
 
+                uint16_t sensorNumber = defaultSensorNumber;
+                uint8_t lun = defaultLun;
+                auto findSensorNum = baseConfigMap.find("SensorNumber");
+                if (findSensorNum != baseConfigMap.end())
+                {
+                    auto val = std::visit(VariantToUnsignedIntVisitor(),
+                                          findSensorNum->second);
+                    if (val > std::numeric_limits<uint16_t>::max())
+                    {
+                        lg2::error(
+                            "SensorNumber '{VALUE}' out of range for '{PATH}'",
+                            "VALUE", val, "PATH", interfacePath);
+                    }
+                    else
+                    {
+                        sensorNumber = static_cast<uint16_t>(val);
+                    }
+                }
+                auto findLun = baseConfigMap.find("LUN");
+                if (findLun != baseConfigMap.end())
+                {
+                    auto val = std::visit(VariantToUnsignedIntVisitor(),
+                                          findLun->second);
+                    // IPMI LUN is a 2-bit field; valid range is 0-3
+                    if (val > maxLun)
+                    {
+                        lg2::error("LUN '{VALUE}' out of range for '{PATH}'",
+                                   "VALUE", val, "PATH", interfacePath);
+                    }
+                    else
+                    {
+                        lun = static_cast<uint8_t>(val);
+                    }
+                }
+
                 auto& sensorEntry = sensors[sensorName];
                 sensorEntry = nullptr;
                 try
@@ -309,7 +346,8 @@ void createSensors(
                     sensorEntry = std::make_shared<ExternalSensor>(
                         sensorType, objectServer, dbusConnection, sensorName,
                         sensorUnits, std::move(sensorThresholds), interfacePath,
-                        maxValue, minValue, timeoutSecs, readState);
+                        maxValue, minValue, timeoutSecs, readState,
+                        sensorNumber, lun);
                     sensorEntry->initWriteHook(
                         [&sensors, &reaperTimer](
                             const std::chrono::steady_clock::time_point& now) {
